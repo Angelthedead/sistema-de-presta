@@ -355,6 +355,24 @@
             #modalReporte .flex-gap {
                 gap: 10px;
             }
+
+            /* Fix Android: en la fila de cobro no expandir el botón al 100% */
+            #modalPagos .btn-group-row.mt-sm {
+                display: flex;
+                flex-direction: row;
+                align-items: stretch;
+                gap: 8px;
+            }
+            #modalPagos .btn-group-row.mt-sm #montoAbono {
+                flex: 1 1 auto;
+                min-width: 0;
+            }
+            #modalPagos .btn-group-row.mt-sm #btnAbonar {
+                width: auto;
+                min-width: 110px;
+                margin-bottom: 0;
+                flex: 0 0 auto;
+            }
         }
 
         /* --- ESTILOS DE IMPRESIÓN QUIRÚRGICOS --- */
