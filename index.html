@@ -1,0 +1,2976 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Préstamos v6 - Nexo Cero Lag</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        /* Variables y Estilos Generales */
+        :root {
+            --primary: #3b82f6; --primary-hover: #1d4ed8;
+            --success: #10b981; --danger: #ef4444; --warning: #f59e0b;
+            --dark: #0f172a; --light: #f8fafc; --gray: #64748b;
+            --border: #e2e8f0; --bg-body: #f1f5f9; --bg-card: #ffffff;
+            --text-main: #1e293b;
+        }
+
+        body.dark-mode {
+            --bg-body: #07101f; --bg-card: #0d1b2e; --text-main: #e2e8f0;
+            --border: #1a3050; --light: #111e33; --gray: #7a9cc4;
+        }
+        
+        * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; transition: background-color 0.3s, color 0.3s; }
+        body { background-color: var(--bg-body); margin: 0; padding: 20px; color: var(--text-main); }
+
+        /* Botones táctiles: tamaño mayor para pantallas touch */
+        .btn { padding: 8px 12px; border-radius: 8px; font-size: 14px; }
+        .btn-touch { padding: 14px 18px; font-size: 16px; min-height:44px; }
+        @media (hover: none), (max-width: 900px) {
+            .btn { padding: 12px 16px; font-size: 16px; }
+            .btn-touch { padding: 16px 20px; font-size: 18px; }
+            .header { padding: 12px; }
+        }
+
+        /* Menu dinámico mínimo (cabecera adaptativa) */
+        .header { gap: 12px; }
+        .header-actions { display:flex; gap:8px; align-items:center; }
+
+        /* Estilos de impresión específicos para ticket 58mm y reporte A4 */
+        @media print {
+            /* ocultar todo por defecto */
+            body * { visibility: hidden !important; display: none !important; }
+
+                /* Ticket térmico 58mm */
+                #ticket-impresion, #ticket-impresion * { visibility: visible !important; display: block !important; }
+                /* Variables configurables para ticket */
+                :root { --ticket-width-mm: 58mm; --ticket-padding-mm: 2mm; --ticket-font-size: 12px; }
+                #ticket-impresion { position: fixed; left: 0; top: 0; width: var(--ticket-width-mm); margin: 0; padding: var(--ticket-padding-mm); background: #fff; color: #000; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                #ticket-impresion .ticket-wrapper { width: 100%; }
+                /* Página específica para impresoras térmicas: 58mm */
+                @page ticket { size: 58mm auto; margin: 0; }
+                /* Aplicar page rule solo para el contenedor (algunos navegadores usan la primera @page) */
+                #ticket-impresion { page: ticket; }
+
+            /* Reporte A4 */
+            #reporte-impresion, #reporte-impresion * { visibility: visible !important; display: block !important; }
+            #reporte-impresion { position: fixed; left: 0; top: 0; width: 210mm; margin: 0; padding: 8mm; background: #fff; color: #000; box-sizing: border-box; }
+        }
+
+        /* UI Principal */
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
+        .header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .card { background: var(--bg-card); padding: 15px 20px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        .card h3 { margin: 0; color: var(--gray); font-size: 12px; text-transform: uppercase; }
+        .card p { margin: 8px 0 0; font-size: 22px; font-weight: bold; color: var(--text-main); }
+
+        /* Botones y Formularios */
+        .btn { padding: 10px 16px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; text-align: center; display: inline-block; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-warning { background: var(--warning); color: white; }
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-main); }
+        .btn-small { padding: 6px 12px; font-size: 12px; }
+        .btn-sm { padding: 5px 10px; font-size: 12px; }
+        .btn-table { padding: 12px 20px; font-size: 16px; }
+        .btn-clear-client { display: none; margin-left: 8px; padding: 6px 10px; font-size: 13px; }
+        .pwd-wrapper { position: relative; }
+        .pwd-toggle-btn { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: transparent; border: none; cursor: pointer; font-size: 16px; color: var(--gray); }
+        .pwd-toggle-btn:active { transform: translateY(-50%) scale(0.98); }
+        .textarea-ticket-editor { height:200px; font-family:monospace; white-space:pre-wrap; }
+        .preview-ticket-editor { background:#fff; color:#000; padding:10px; }
+
+        /* Tablas */
+        .table-container { background: var(--bg-card); border-radius: 12px; overflow-x: auto; border: 1px solid var(--border); }
+        table { width: 100%; border-collapse: collapse; min-width: 600px; }
+        th, td { padding: 14px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
+        th { background-color: var(--light); color: var(--gray); font-weight: 600; text-transform: uppercase; font-size: 11px; white-space: nowrap; }
+
+        /* Modales mejorados */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; /* center vertically */ opacity: 0; visibility: hidden; z-index: 1000; overflow-y: auto; padding: 15px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+        .modal-overlay.active { opacity: 1; visibility: visible; }
+        .modal-content { position: relative; background: var(--bg-card); width: 100%; max-width: 600px; padding: 25px 30px; border-radius: 14px; transform: translateY(-30px) scale(0.95); opacity: 0; transition: transform 0.3s, opacity 0.3s; color: var(--text-main); margin: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto; }
+        .modal-overlay.active .modal-content { transform: translateY(0) scale(1); opacity: 1; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .modal-header h2, .modal-header h3 { margin: 0; font-size: 18px; }
+        .modal-close { position: absolute; top: 12px; right: 12px; background: transparent; border: none; font-size: 22px; line-height: 1; color: var(--gray); cursor: pointer; transition: color 0.2s; }
+        .modal-close:hover { color: var(--text-main); }
+
+        /* Panel de cobros: centrado */
+        #modalPagos { align-items: center; justify-content: center; padding: 12px; }
+        #modalPagos.active { padding-top: 12px; }
+        #modalPagos .modal-content {
+            width: min(480px, calc(100vw - 26px));
+            min-height: 390px;
+            max-height: calc(100vh - 136px);
+            margin: auto;
+            border-radius: 12px;
+            padding: 18px;
+            overflow-y: auto;
+            transform-origin: center center;
+        }
+        #modalPagos #montoAbono { min-width: 0; font-size: 16px; }
+        #modalPagos #btnAbonar { white-space: nowrap; }
+
+        @media (max-width: 900px) {
+            #modalPagos { align-items: center; justify-content: center; padding: 10px; }
+            #modalPagos.active { padding-top: 10px; }
+            #modalPagos .modal-content {
+                width: min(480px, calc(100vw - 20px));
+                max-width: 480px;
+                min-height: 0;
+                max-height: 88vh;
+                margin: auto;
+                border-radius: 12px;
+                padding: 16px;
+                transform: translateY(8px) scale(0.985);
+                transform-origin: center center;
+            }
+            #modalPagos.active .modal-content { transform: translateY(0) scale(1); }
+            #modalPagos .flex-wrap-gap { flex-direction: column; }
+            #modalPagos .btn { width: 100%; }
+        }
+
+        
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--gray); font-weight: bold; }
+        /* Fuente de 16px en inputs para evitar Zoom automático en iPhone/Safari */
+        .form-group input, .form-group select { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-body); color: var(--text-main); outline: none; font-size: 16px; }
+        .flex-row { display: flex; gap: 15px; }
+        .flex-row > div { flex: 1; }
+
+        /* Vistas Previas de Imagen */
+        .img-preview { width: 100%; height: 120px; object-fit: cover; border-radius: 8px; border: 1px dashed var(--border); margin-top: 8px; background: var(--bg-body); display: none; }
+
+        /* Alertas de estado */
+        .badge { padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; display: inline-block; }
+        .bg-danger { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .bg-warning { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .bg-success { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .bg-primary { background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); }
+
+        /* --- CLASES PARA TICKET --- */
+        .ticket-wrapper { width: var(--ticket-width-mm); max-width: none; font-family: 'Courier New', monospace; color: black; background: white; padding: var(--ticket-padding-mm); margin: 0; box-sizing: border-box; }
+        .ticket-title { text-align: center; font-weight: bold; font-size: calc(var(--ticket-font-size) + 2px); margin-bottom: 6px; }
+        .ticket-subtitle { text-align: center; font-size: calc(var(--ticket-font-size) - 2px); margin-bottom: 4px; }
+        .ticket-subtext { text-align: center; font-size: calc(var(--ticket-font-size) - 3px); margin-bottom: 8px; }
+        .ticket-header { border-top: 1px dashed black; border-bottom: 1px dashed black; padding: 6px 0; text-align: center; font-weight: bold; margin-bottom: 8px; font-size: var(--ticket-font-size); }
+        .ticket-section { font-size: var(--ticket-font-size); line-height: 1.35; margin-bottom: 8px; }
+        .ticket-section-title { font-size: 10px; font-weight: bold; }
+        .ticket-row { display: flex; justify-content: space-between; padding: 3px 0; }
+        .ticket-row-item { font-size: 9px; }
+        .ticket-row-item-small { font-size: 8px; margin-top: 4px; }
+        .ticket-row-label { font-weight: bold; }
+        .ticket-divider-container { border-top: 1px dashed black; border-bottom: 1px dashed black; padding: 6px 0; margin-bottom: 8px; }
+        .ticket-amount { text-align: center; font-weight: bold; font-size: calc(var(--ticket-font-size) + 1px); color: black; }
+        .ticket-amount-value { text-align: center; font-weight: bold; font-size: calc(var(--ticket-font-size) + 6px); color: black; margin: 6px 0; }
+        .ticket-highlight { font-weight: bold; color: red; }
+        .ticket-footer { font-size: 9px; text-align: center; margin-top: 12px; line-height: 1.5; }
+        .ticket-signature { border-top: 1px solid black; padding-top: 8px; margin-bottom: 8px; }
+        .ticket-footer-text { font-size: 8px; color: #555; }
+
+        /* --- UTILIDADES (reemplazo de estilos inline) --- */
+        .m-0 { margin: 0 !important; }
+        .mt-0 { margin-top: 0 !important; }
+        .mt-sm { margin-top: 8px !important; }
+        .mt-md { margin-top: 12px !important; }
+        .mt-lg { margin-top: 15px !important; }
+        .mb-sm { margin-bottom: 8px !important; }
+        .mb-md { margin-bottom: 12px !important; }
+        .mb-lg { margin-bottom: 15px !important; }
+        .m-2t { margin: 2px 0 0 !important; }
+
+        .flex-between { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+        .flex-gap-8 { display:flex; gap:8px; align-items:center; }
+        .flex-wrap-gap { display:flex; gap:12px; flex-wrap:wrap; margin-top:8px; }
+        .flex-col-260 { flex:1; min-width:260px; }
+        .flex-1 { flex:1; }
+
+        .search-input { width:100%; padding:12px; margin-bottom:15px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-main); font-size:16px; }
+        .form-newcliente { display:none; background: var(--bg-body); padding: 15px; border-radius: 10px; margin-bottom: 15px; border: 1px solid var(--border); }
+        .form-newcliente.active { display: block; }
+        .file-input-small { font-size: 14px; }
+        .table-scroll { max-height: 350px; overflow-y: auto; }
+        .btn-flex-1 { flex: 1; min-width: 100px; }
+        .btn-flex-1-sm { flex: 1; min-width: 80px; }
+        .panel-light { background: var(--light); padding: 15px; border-radius: 8px; border: 1px solid var(--border); }
+        .input-flex { flex:1; padding:12px; border-radius:8px; border:1px solid var(--border); font-size:16px; }
+        .panel-info { font-size: 14px; line-height: 1.6; margin-bottom: 15px; background: var(--bg-body); padding: 12px; border-radius: 8px; border: 1px solid var(--border); }
+        .historial { margin-top: 15px; max-height: 150px; overflow-y: auto; font-size: 13px; padding-right: 5px; }
+        .hr-dashed { border:0; border-top: 1px solid var(--border); margin: 20px 0; }
+
+        .brand-title { margin:0; color: var(--primary); }
+        .brand-sub { margin:2px 0 0; color: var(--gray); font-size:13px; }
+        .text-success { color: var(--success); }
+        .text-muted { color: var(--gray); }
+        .text-primary { color: var(--primary); }
+
+        .logo-preview { width:48px; height:48px; border:1px solid var(--border); display:flex; align-items:center; justify-content:center; overflow:hidden; background:var(--bg-body); }
+        .logo-img { width:100%; height:100%; object-fit:cover; }
+
+        .input-hidden { display: none; }
+        .text-center { text-align: center; }
+        .hr-dashed-sm { border: 0; border-top: 1px dashed var(--border); margin: 20px 0 15px 0; }
+
+        .modal-large { max-width: 800px; }
+        .modal-small { max-width: 450px; }
+        .modal-xs { max-width: 420px; }
+        .modal-wide { max-width: 720px; }
+        .modal-med { max-width: 500px; }
+        .modal-doc { max-width: 600px; max-height: 90vh; overflow-y: auto; }
+
+        .btn-outline-small { padding:6px 8px; }
+        .admin-only { display: none !important; }
+        .title-lg { margin-top:0; font-size:20px; }
+        .mb-10 { margin: 0 0 10px 0; }
+
+        .prestamista-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; }
+        .list-prestamistas { margin-top:6px; max-height:240px; overflow:auto; }
+        .permisos-list { margin:8px 0; padding:8px; background:var(--bg-input); border-radius:4px; }
+        .permisos-list.permisos-horizontal { display:flex; flex-wrap:wrap; gap:16px; justify-content:flex-start; }
+        .permiso-item { padding:6px 0; display:flex; align-items:center; gap:6px; min-width:120px; }
+        .permiso-item label { cursor:pointer; font-size:14px; }
+        .permiso-item input[type="checkbox"] { cursor:pointer; }
+
+        .form-label { font-weight: bold; font-size: 14px; }
+        .flex-gap-login { margin-top:12px; display:flex; gap:8px; justify-content:flex-end; }
+        .flex-gap { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+        .btn-table { margin:4px; }
+        .flex-wrap-users { display:flex; gap:12px; flex-wrap:wrap; margin-top:8px; }
+        .flex-gap-create { margin-top:8px; display:flex; gap:8px; }
+
+        .relative-pos { position: relative; }
+        .label-hidden { margin: 10px 0; display: none; }
+        .input-pwd { padding-right: 40px; }
+
+        /* --- ALERTAS MODERNAS --- */
+        .alert-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 2000; opacity: 0; visibility: hidden; transition: all 0.3s; }
+        .alert-overlay.active { opacity: 1; visibility: visible; }
+        .alert-box { background: var(--bg-card); border-radius: 12px; padding: 30px; max-width: 400px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); transform: scale(0.9); transition: transform 0.3s; }
+        .alert-overlay.active .alert-box { transform: scale(1); }
+        .alert-icon { font-size: 48px; margin-bottom: 15px; text-align: center; }
+        .alert-title { font-size: 20px; font-weight: bold; margin-bottom: 10px; text-align: center; }
+        .alert-message { font-size: 14px; color: var(--gray); margin-bottom: 20px; text-align: center; line-height: 1.5; }
+        .alert-buttons { display: flex; gap: 10px; justify-content: center; }
+        .alert-btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; min-width: 100px; }
+        .alert-success .alert-icon { color: var(--success); }
+        .alert-success .alert-title { color: var(--success); }
+        .alert-error .alert-icon { color: var(--danger); }
+        .alert-error .alert-title { color: var(--danger); }
+        .alert-warning .alert-icon { color: var(--warning); }
+        .alert-warning .alert-title { color: var(--warning); }
+        .alert-info .alert-icon { color: var(--primary); }
+        .alert-info .alert-title { color: var(--primary); }
+
+        /* --- EDICIÓN DE PAGOS --- */
+        .pago-item { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding: 10px 0; gap: 8px; flex-wrap: wrap; }
+        .pago-info { flex: 1; }
+        .pago-monto { color: var(--success); font-weight: bold; }
+        .pago-actions { display: flex; gap: 5px; }
+        .pago-btn { padding: 4px 8px; font-size: 11px; }
+
+        /* --- REEMBOLSO --- */
+        .reembolso-panel { background: var(--light); padding: 12px; border-radius: 8px; margin-top: 10px; border: 1px dashed var(--warning); }
+        .reembolso-title { color: var(--warning); font-weight: bold; margin-bottom: 8px; }
+        .reembolso-text { margin: 8px 0 0; font-size: 13px; color: var(--gray); }
+        .reembolso-btn { width: 100%; margin-top: 8px; }
+
+        .info-divider { border-top: 1px dashed var(--border); margin: 8px 0; }
+        .saldo-display { font-size: 18px; }
+        .pago-monto-success { color: var(--success); font-weight: bold; }
+        .pago-monto-warning { color: var(--warning); font-weight: bold; }
+
+        .toggle-password { cursor: pointer; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); padding: 5px 10px; background: none; border: none; color: var(--gray); font-size: 18px; }
+        .password-wrapper { position: relative; }
+        .client-list-dropdown { display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; max-height: 250px; overflow-y: auto; z-index: 100; margin-top: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .client-list-dropdown.active { display: block; }
+        .client-item { padding: 12px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.2s; }
+        .client-item:hover { background: var(--light); }
+        .client-item-name { font-weight: bold; }
+        .client-item-cedula { font-size: 12px; color: var(--gray); }
+
+        /* --- CLASES PARA MODAL OPCIONES TICKET --- */
+        .ticket-options-card { background: var(--bg-card); padding: 20px; border-radius: 12px; border: 1px solid var(--border); }
+        .ticket-options-title { margin-top: 0; color: var(--success); }
+        .ticket-options-subtitle { color: var(--gray); margin: 10px 0; }
+        .ticket-options-highlight { background: var(--light); padding: 15px; border-radius: 8px; margin: 15px 0; text-align: center; }
+        .ticket-options-amount { font-size: 24px; font-weight: bold; color: var(--success); margin-bottom: 5px; }
+        .ticket-options-hint { font-size: 12px; color: var(--gray); }
+        .ticket-options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        .ticket-options-grid-full { display: grid; gap: 10px; margin-bottom: 15px; }
+
+        /* --- ADAPTABILIDAD MÓVIL (RESPONSIVE) --- */
+        @media (max-width: 650px) {
+            body { padding: 10px; }
+            .header { flex-direction: column; align-items: flex-start; }
+            .header-actions { width: 100%; }
+            .header-actions .btn { flex: 1; text-align: center; padding: 10px 5px; font-size: 12px; }
+            .dashboard { grid-template-columns: 1fr 1fr; gap: 10px; } /* 2 Tarjetas por fila en móvil */
+            .card p { font-size: 18px; }
+            .flex-row { flex-direction: column; gap: 0; } /* Los formularios se apilan hacia abajo */
+            .modal-content { padding: 20px 15px; }
+            .btn { width: 100%; margin-bottom: 5px; } /* Botones anchos en móvil */
+            .btn-group-row { display: flex; gap: 10px; }
+            .btn-group-row .btn { margin-bottom: 0; }
+        }
+
+        /* --- AJUSTES TÁCTILES (Android / pantallas touch) --- */
+        @media (hover: none), (pointer: coarse), (max-width: 900px) {
+            .btn { min-height: 44px; }
+
+            /* Botones críticos de flujo */
+            #btn-auth,
+            #btnAbonar,
+            #modalLogin .btn,
+            #modalPagos .btn,
+            #modalConfig .btn,
+            #modalCrearPrestamo .btn,
+            #modalEditarPrestamo .btn,
+            #modalReporte .btn {
+                min-height: 48px;
+                font-size: 15px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+            }
+
+            /* Campo de cobro más cómodo al tacto */
+            #montoAbono {
+                min-height: 48px;
+                font-size: 16px;
+            }
+
+            /* Botón de acción en la tabla de préstamos */
+            #tablaPrestamos .btn-small {
+                min-height: 42px;
+                padding: 10px 12px;
+                font-size: 14px;
+            }
+
+            /* Separación más clara entre acciones */
+            #modalPagos .flex-wrap-gap,
+            #modalConfig .btn-group-row,
+            #modalReporte .flex-gap {
+                gap: 10px;
+            }
+        }
+
+        /* --- ESTILOS DE IMPRESIÓN QUIRÚRGICOS --- */
+        .print-only { display: none; }
+        .ticket-print-host { display: none; }
+        .reporte-preview-host { display: none; margin-top: 12px; max-height: 60vh; overflow: auto; background: var(--bg-card); padding: 12px; border-radius: 8px; border: 1px solid var(--border); }
+        
+        /* IMPRESIÓN GENERAL - Ocultar todo por defecto */
+        @media print {
+            * {
+                visibility: hidden !important;
+                display: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+        }
+        
+        /* IMPRESIÓN DE TICKET (58mm térmico) */
+        @media print {
+            #ticket-impresion {
+                visibility: visible !important;
+                display: block !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 58mm !important;
+                height: auto !important;
+                font-family: 'Courier New', Courier, monospace !important;
+                font-size: 11px !important;
+                color: black !important;
+                background: white !important;
+                line-height: 1.2 !important;
+                position: relative !important;
+                border: none !important;
+                box-shadow: none !important;
+                page-break-after: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            
+            #ticket-impresion,
+            #ticket-impresion * {
+                visibility: visible !important;
+                display: inherit !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                width: auto !important;
+                height: auto !important;
+                font-family: 'Courier New', Courier, monospace !important;
+                font-size: 11px !important;
+                color: black !important;
+                background: transparent !important;
+                line-height: 1.2 !important;
+                position: static !important;
+                border: inherit !important;
+                box-shadow: none !important;
+            }
+        }
+        
+        /* IMPRESIÓN DE REPORTE (A4) */
+        @media print {
+            #reporte-impresion {
+                visibility: visible !important;
+                display: block !important;
+                margin: 0 !important;
+                padding: 20px !important;
+                width: 210mm !important;
+                height: auto !important;
+                font-family: Arial, sans-serif !important;
+                font-size: 14px !important;
+                color: black !important;
+                background: white !important;
+                line-height: 1.6 !important;
+                position: relative !important;
+                border: none !important;
+                box-shadow: none !important;
+            }
+            
+            #reporte-impresion,
+            #reporte-impresion * {
+                visibility: visible !important;
+                display: inherit !important;
+                color: black !important;
+                background: transparent !important;
+                box-shadow: none !important;
+            }
+            
+            #reporte-impresion h2,
+            #reporte-impresion h3,
+            #reporte-impresion p {
+                margin: 10px 0 !important;
+                padding: 0 !important;
+            }
+            
+            #reporte-impresion table {
+                width: 100% !important;
+                border-collapse: collapse !important;
+                margin: 15px 0 !important;
+            }
+            
+            #reporte-impresion th,
+            #reporte-impresion td {
+                border: 1px solid #333 !important;
+                padding: 8px !important;
+                color: black !important;
+                background: white !important;
+                text-align: left !important;
+            }
+            
+            #reporte-impresion thead {
+                background: #333 !important;
+            }
+            
+            #reporte-impresion thead th {
+                background: #333 !important;
+                color: white !important;
+                font-weight: bold !important;
+            }
+            
+            #reporte-impresion tfoot tr {
+                background: #f0f0f0 !important;
+                font-weight: bold !important;
+            }
+            
+            #reporte-impresion tfoot td {
+                background: #f0f0f0 !important;
+                font-weight: bold !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div>
+            <h1 id="ui-nombre-empresa" class="brand-title">Nexo Cero Lag</h1>
+            <p class="brand-sub">Sistema de Préstamos v6</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-outline" onclick="toggleTema()">🌙</button>
+            <button id="btn-auth" class="btn btn-outline btn-touch" onclick="toggleAuth()">🔐 Login</button>
+            <button class="btn btn-outline btn-touch admin-only" data-admin-only="true" onclick="abrirModal('modalPrestamistas')">🧑‍💼 Prestamistas</button>
+            <button class="btn btn-primary btn-touch" onclick="abrirModal('modalClientes')">👥 Clientes</button>
+            <button class="btn btn-primary btn-touch" onclick="limpiarClienteSeleccionadoPrestamo(); abrirModal('modalCrearPrestamo')">💳 Nuevo Préstamo</button>
+            <button class="btn btn-outline btn-touch" onclick="abrirModal('modalReporte')">📊 Reporte</button>
+            <button class="btn btn-outline" onclick="abrirModal('modalConfig')">⚙️ Ajustes</button>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <div class="card"><h3>Capital Prestado</h3><p id="dash-capital">$0.00</p></div>
+        <div class="card"><h3>Interés + Mora</h3><p id="dash-ganancia">$0.00</p></div>
+        <div class="card"><h3>Dinero Cobrado</h3><p id="dash-cobrado" class="text-success">$0.00</p></div>
+        <div class="card"><h3>Préstamos Activos</h3><p id="dash-activos">0</p></div>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Cliente</th>
+                    <th>Plazo y Fechas</th>
+                    <th>Deuda / Pagado</th>
+                    <th>Saldo Actual</th>
+                    <th>Estado</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody id="tablaPrestamos"></tbody>
+        </table>
+    </div>
+
+    <div class="modal-overlay" id="modalClientes">
+        <div class="modal-content modal-large">
+            <div class="flex-between mb-lg">
+                <h2 class="m-0">Directorio de Clientes</h2>
+                <button class="btn btn-primary btn-small" onclick="mostrarFormCliente()">+ Nuevo Cliente</button>
+            </div>
+            
+            <input type="text" id="buscadorClientes" class="search-input" placeholder="🔍 Buscar cliente por nombre o cédula..." onkeyup="renderizarClientes()">
+
+            <div id="formNuevoCliente" class="form-newcliente">
+                <h4 class="mt-0">Registrar Nuevo Cliente</h4>
+                <div class="flex-row">
+                    <input type="hidden" id="cliId">
+                    <div class="form-group"><label>Nombre Completo *</label><input type="text" id="cliNombre"></div>
+                    <div class="form-group"><label>Cédula</label><input type="text" id="cliCedula"></div>
+                    <div class="form-group"><label>Teléfono</label><input type="text" id="cliTelefono"></div>
+                </div>
+                <div class="flex-row">
+                    <div class="form-group">
+                        <label>Foto Cédula (Se comprime autom.)</label>
+                        <input type="file" accept="image/*" id="cliFotoCedula" class="file-input-small" onchange="previsualizar(this, 'previewCedula')">
+                        <img id="previewCedula" class="img-preview">
+                    </div>
+                    <div class="form-group">
+                        <label>Documento de Garantía (Opcional)</label>
+                        <input type="file" accept="image/*" id="cliFotoGarantia" class="file-input-small" onchange="previsualizar(this, 'previewGarantia')">
+                        <img id="previewGarantia" class="img-preview">
+                    </div>
+                </div>
+                <div class="btn-group-row mt-lg">
+                    <button class="btn btn-outline" onclick="ocultarFormCliente()">Cancelar</button>
+                    <button class="btn btn-success" onclick="guardarCliente()">Guardar Cliente</button>
+                </div>
+            </div>
+
+            <!-- Modal Acciones Cliente -->
+            <div class="modal-overlay" id="modalAccionesCliente">
+                <div class="modal-content">
+                    <h3>Acciones Cliente: <span id="accionCliNombre"></span></h3>
+                    <div id="accionCliPrestamoDetalles" class="mt-sm text-small"></div>
+                    <div class="flex-gap mt-sm">
+                        <button class="btn btn-primary btn-table" onclick="imprimirCliente()">🖨️ Imprimir Info</button>
+                        <button class="btn btn-success btn-table" onclick="enviarClienteWhatsApp()">💬 Enviar por WhatsApp</button>
+                    </div>
+                    <div class="btn-group-row mt-lg">
+                        <button class="btn btn-outline" onclick="cerrarModal('modalAccionesCliente')">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-container table-scroll">
+                <table>
+                    <thead><tr><th>Nombre y Cédula</th><th>Contacto</th><th>Documentos</th><th>Acción</th></tr></thead>
+                    <tbody id="tablaClientesBody"></tbody>
+                </table>
+            </div>
+            <div class="mt-lg"><button class="btn btn-outline" onclick="cerrarModal('modalClientes')">Cerrar</button></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalCrearPrestamo">
+        <div class="modal-content">
+            <h2 class="title-lg">Nuevo Préstamo</h2>
+            
+            <div class="form-group">
+                <label>Cliente (Buscar) *</label>
+                <div class="relative-pos">
+                    <input type="text" id="buscarClientePrestamo" class="search-input" placeholder="🔍 Buscar cliente por nombre o cédula..." onkeyup="filtrarClientesModal()" onfocus="mostrarClientesDropdown()">
+                    <div id="dropdownClientes" class="client-list-dropdown"></div>
+                </div>
+                <small id="clienteSeleccionadoInfo" class="text-muted">Selecciona un cliente</small>
+            </div>
+            
+            <input type="hidden" id="idClienteSeleccionado">
+            <h3 id="lblClienteSeleccionado" class="text-primary label-hidden"></h3>
+            <button id="btnLimpiarCliente" class="btn btn-outline btn-small btn-clear-client" onclick="limpiarClienteSeleccionadoPrestamo()">Quitar Cliente</button>
+            
+            <div class="flex-row">
+                <div class="form-group"><label>Capital a Prestar ($) *</label><input type="number" id="pMonto" required min="1"></div>
+                <div class="form-group"><label>Interés Total (%) *</label><input type="number" id="pInteres" required min="0" value="20"></div>
+            </div>
+            
+            <div class="flex-row">
+                <div class="form-group">
+                    <label>Tipo de Plazo *</label>
+                    <select id="pTipoPlazo">
+                        <option value="dias">Días</option>
+                        <option value="semanas">Semanas</option>
+                        <option value="meses" selected>Meses</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Cantidad de Tiempo *</label><input type="number" id="pCantPlazo" required min="1" value="1"></div>
+            </div>
+
+            <div class="flex-row">
+                <div class="form-group"><label>Fecha Inicio *</label><input type="date" id="pFechaInicio" required></div>
+                <div class="form-group"><label>Cargo por Mora ($) (Opcional)</label><input type="number" id="pMora" placeholder="Ej. 500"></div>
+            </div>
+
+            <div class="btn-group-row mt-lg">
+                <button class="btn btn-outline" onclick="limpiarClienteSeleccionadoPrestamo(); cerrarModal('modalCrearPrestamo')">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarPrestamo()">Generar Préstamo</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalPagos">
+        <div class="modal-content">
+            <h2 class="mt-0">Detalles y Cobro</h2>
+            <div id="infoPago" class="panel-info"></div>
+            
+            <div class="panel-light">
+                <label class="form-label">Registrar Pago Recibido ($)</label>
+                <div class="btn-group-row mt-sm">
+                    <input type="number" id="montoAbono" class="input-flex">
+                    <button class="btn btn-success" id="btnAbonar">Cobrar</button>
+                </div>
+            </div>
+
+            <div id="historialPagos" class="historial"></div>
+            
+            <hr class="hr-dashed">
+            <div class="flex-wrap-gap">
+                <div class="flex-wrap-gap flex-1">
+                    <button class="btn btn-danger btn-small btn-flex-1" id="btnBorrarPrestamo">🗑️ Eliminar</button>
+                    <button class="btn btn-warning btn-small btn-flex-1" id="btnEditarPrestamo" onclick="abrirEdicionDeuda()">✏️ Editar Deuda</button>
+                </div>
+                <button class="btn btn-outline btn-small btn-flex-1-sm" onclick="cerrarModal('modalPagos')">Cerrar</button>
+            </div>
+
+
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalEditarPrestamo">
+        <div class="modal-content">
+            <h2 class="mt-0 text-warning">Editar Préstamo</h2>
+            <p class="text-muted mb-lg">Modifica los valores. El sistema recalculará el saldo restante automáticamente restando los pagos ya realizados.</p>
+            <input type="hidden" id="eIdPrestamo">
+            
+            <div class="flex-row">
+                <div class="form-group"><label>Capital Prestado ($) *</label><input type="number" id="eMonto" required min="1"></div>
+                <div class="form-group"><label>Interés Total (%) *</label><input type="number" id="eInteres" required min="0"></div>
+            </div>
+            
+            <div class="flex-row">
+                <div class="form-group">
+                    <label>Tipo de Plazo *</label>
+                    <select id="eTipoPlazo">
+                        <option value="dias">Días</option>
+                        <option value="semanas">Semanas</option>
+                        <option value="meses">Meses</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Cantidad de Tiempo *</label><input type="number" id="eCantPlazo" required min="1"></div>
+            </div>
+
+            <div class="flex-row">
+                <div class="form-group"><label>Fecha Inicio *</label><input type="date" id="eFechaInicio" required></div>
+                <div class="form-group"><label>Cargo por Mora ($)</label><input type="number" id="eMora"></div>
+            </div>
+
+            <div class="btn-group-row mt-lg">
+                <button class="btn btn-outline" onclick="cerrarModal('modalEditarPrestamo'); abrirModal('modalPagos');">Cancelar</button>
+                <button class="btn btn-warning" onclick="guardarEdicionDeuda()">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalConfig">
+        <div class="modal-content modal-small">
+            <h2 class="mt-0">Configuración y Respaldo</h2>
+            <div class="form-group"><label>Nombre del Negocio</label><input type="text" id="cfgNombre"></div>
+            <div class="form-group"><label>Teléfono (Para el ticket)</label><input type="text" id="cfgTel"></div>
+            <div class="form-group"><label>NIT / Identificación fiscal</label><input type="text" id="cfgNit" placeholder="NIT o identificación"></div>
+            <div class="form-group"><label>Dirección</label><input type="text" id="cfgDireccion" placeholder="Dirección del negocio"></div>
+            <div class="form-group"><label>Mensaje Pie de Ticket</label><input type="text" id="cfgMsj"></div>
+            <div class="form-group"><label>Logo (opcional)</label>
+                <div class="flex-gap-8">
+                    <label class="btn btn-outline btn-outline-small">Subir Logo<input id="cfgLogoFile" type="file" accept="image/*" class="input-hidden" onchange="previsualizarLogo(event)"></label>
+                    <div id="cfgLogoPreview" class="logo-preview"></div>
+                </div>
+            </div>
+            <div class="form-group"><label><input type="checkbox" id="cfgQrEnable"> Incluir QR en ticket</label></div>
+            <div class="form-group"><label>Enlace QR (opcional)</label><input type="text" id="cfgQrLink" placeholder="https://... (opcional)"></div>
+            
+            <hr class="hr-dashed-sm">
+            <h4 class="mb-10">Copias de Seguridad (Backup)</h4>
+            <div class="btn-group-row mb-lg">
+                <button class="btn btn-success flex-1" onclick="descargarBackup()">💾 Descargar JSON</button>
+                <label class="btn btn-outline flex-1 text-center">
+                    📂 Subir Backup
+                    <input type="file" accept=".json" class="input-hidden" onchange="restaurarBackup(event)">
+                </label>
+            </div>
+            <div class="btn-group-row mb-lg admin-only" id="adminIndexeddbActions">
+                <button class="btn btn-primary flex-1" onclick="descargarBackupIndexedDB()">🗄️ Exportar Base Local (IndexedDB)</button>
+                <label class="btn btn-outline flex-1 text-center">
+                    🗄️ Importar Base Local
+                    <input type="file" accept=".json" class="input-hidden" onchange="restaurarBackupIndexedDB(event)">
+                </label>
+            </div>
+
+            <div class="btn-group-row mt-lg">
+                <button class="btn btn-outline" onclick="cerrarModal('modalConfig')">Cerrar</button>
+                <button class="btn btn-primary" onclick="guardarConfig()">Guardar Ajustes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Login para prestamistas -->
+    <div class="modal-overlay" id="modalLogin">
+        <div class="modal-content modal-xs">
+            <h3>Iniciar Sesión</h3>
+            <div class="form-group">
+                <label>Usuario *</label>
+                <input id="loginUser" type="text" class="input" placeholder="usuario" required>
+            </div>
+            <div class="form-group">
+                <label>Contraseña *</label>
+                <div class="password-wrapper">
+                    <input id="loginPass" type="password" class="input input-pwd" placeholder="contraseña" required>
+                    <button type="button" class="toggle-password" onclick="togglePasswordLogin()">👁️</button>
+                </div>
+            </div>
+            <div class="flex-gap mt-lg">
+                <button class="btn btn-outline" onclick="cerrarModal('modalLogin')">Cancelar</button>
+                <button class="btn btn-primary" onclick="login()">Entrar</button>
+            </div>
+            <p class="text-muted mt-sm admin-only" data-admin-only="true">Gestiona usuarios desde <a href="#" onclick="abrirModal('modalPrestamistas'); return false;">Prestamistas</a></p>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalPrestamistas">
+        <div class="modal-content modal-wide">
+            <h3>Prestamistas</h3>
+            <div class="flex-wrap-users">
+                <div class="flex-col-260">
+                    <div class="form-group">
+                        <label>Nuevo usuario</label>
+                        <input id="newUserName" class="input" placeholder="usuario">
+                    </div>
+                    <div class="form-group pwd-wrapper">
+                        <label>Contraseña</label>
+                        <input id="newUserPass" class="input" type="password" placeholder="contraseña">
+                        <button type="button" class="pwd-toggle-btn" onclick="togglePwd('newUserPass', this)" aria-label="Mostrar contraseña">👁️</button>
+                    </div>
+                    <div class="flex-gap-create">
+                        <button class="btn btn-outline" onclick="cerrarModal('modalPrestamistas')">Cerrar</button>
+                        <button class="btn btn-primary" onclick="crearPrestamista()">Crear</button>
+                    </div>
+                </div>
+                <div class="flex-col-260">
+                    <label>Usuarios existentes</label>
+                    <div id="listaPrestamistas" class="list-prestamistas"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Editar Permisos de Usuario -->
+    <div class="modal-overlay" id="modalEditarPermisos">
+        <div class="modal-content">
+            <h3>Editar Usuario: <span id="editPermNombre"></span></h3>
+            <input type="hidden" id="editPermUserId">
+            <div class="form-group">
+                <label>Usuario *</label>
+                <input id="editPermUser" class="input" placeholder="usuario" required>
+            </div>
+            <div class="form-group">
+                <label>Nueva Contraseña (dejar vacío para no cambiar)</label>
+                <div class="pwd-wrapper">
+                    <input id="editPermPass" class="input" type="password" placeholder="nueva contraseña">
+                    <button type="button" class="pwd-toggle-btn" onclick="togglePwd('editPermPass', this)" aria-label="Mostrar contraseña">👁️</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Permisos de Acceso a Módulos</label>
+                <div class="permisos-list permisos-horizontal mt-sm">
+                    <div class="permiso-item">
+                        <input type="checkbox" id="perm_modalClientes"><label for="perm_modalClientes">Gestionar Clientes</label>
+                    </div>
+                    <div class="permiso-item">
+                        <input type="checkbox" id="perm_modalCrearPrestamo"><label for="perm_modalCrearPrestamo">Crear Préstamos</label>
+                    </div>
+                    <div class="permiso-item">
+                        <input type="checkbox" id="perm_modalConfig"><label for="perm_modalConfig">Configuración</label>
+                    </div>
+                    <div class="permiso-item">
+                        <input type="checkbox" id="perm_modalReporte"><label for="perm_modalReporte">Ver Reportes</label>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-gap mt-lg">
+                <button class="btn btn-outline" onclick="cerrarModal('modalEditarPermisos')">Cancelar</button>
+                <button class="btn btn-danger" onclick="borrarPrestamista(document.getElementById('editPermUserId').value)">Borrar Usuario</button>
+                <button class="btn btn-primary" onclick="guardarPermisosPrestamista()">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="ticket-impresion" class="ticket-print-host"></div>
+    <!-- Modal Editor de Ticket -->
+    <div class="modal-overlay" id="modalEditarTicket">
+        <div class="modal-content modal-wide">
+            <h3>Editor de Ticket</h3>
+            <p class="text-muted">Modifica el contenido HTML que se enviará al impresor o se mostrará al cliente.</p>
+            <div class="form-group">
+                <textarea id="txtEditarTicket" class="input textarea-ticket-editor"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Vista previa:</label>
+                <div id="previewEditarTicket" class="ticket-wrapper preview-ticket-editor"></div>
+            </div>
+            <div class="flex-gap mt-lg">
+                <button class="btn btn-outline" onclick="cerrarModal('modalEditarTicket')">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarEdicionTicket()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Editar Pago -->
+    <div class="modal-overlay" id="modalEditarPago">
+        <div class="modal-content">
+            <h3>Editar Recibo</h3>
+            <input type="hidden" id="editPagoIndex">
+            <div class="form-group">
+                <label>Monto del Pago ($) *</label>
+                <input type="number" id="editPagoMonto" class="input" min="0.01" step="0.01" required>
+            </div>
+            <div class="form-group">
+                <label>Fecha</label>
+                <input type="datetime-local" id="editPagoFecha" class="input">
+            </div>
+            <div class="form-group">
+                <label>Detalle/Concepto (opcional)</label>
+                <input type="text" id="editPagoConcepto" class="input" placeholder="Ej: Cuota inicial, Abono extra...">
+            </div>
+            <div class="flex-gap mt-lg">
+                <button class="btn btn-outline" onclick="cerrarModal('modalEditarPago')">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarEdicionPago()">Guardar y Reimprimir</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Reporte con filtros -->
+    <div class="modal-overlay" id="modalReporte">
+        <div class="modal-content modal-wide">
+            <h3>Generar Reporte</h3>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label>Tipo de filtro *</label>
+                    <select id="repTipo" class="input" onchange="toggleFiltroReporte()">
+                        <option value="dia">Día</option>
+                        <option value="mes">Mes</option>
+                        <option value="anio">Año</option>
+                        <option value="rango">Rango de fechas</option>
+                    </select>
+                </div>
+                <div id="repControles" class="form-group">
+                    <label>Fecha</label>
+                    <input id="repFecha" type="date" class="input">
+                </div>
+            </div>
+            <div class="flex-gap mt-lg">
+                <button class="btn btn-outline" onclick="cerrarModal('modalReporte')">Cerrar</button>
+                <button class="btn btn-primary" onclick="generarReporteFiltrado(true)">Vista previa</button>
+                <button class="btn btn-success" onclick="generarReporteFiltrado(true, true)">Imprimir</button>
+                <button class="btn btn-secondary" onclick="descargarReportePDF()">Descargar PDF</button>
+                <button class="btn btn-info" onclick="enviarReporteWhatsApp()">Enviar por WhatsApp</button>
+            </div>
+            <p class="text-muted mt-sm">Nota: WhatsApp no permite adjuntar archivos automáticamente desde el navegador. Se generará el PDF para descarga y se abrirá WhatsApp con un mensaje predefinido.</p>
+            <div id="reporte-impresion" class="reporte-preview-host"></div>
+        </div>
+    </div>
+
+    <!-- Modal de Alertas Modernas -->
+    <div id="alertModal" class="alert-overlay">
+        <div class="alert-box" id="alertBox">
+            <div class="alert-icon" id="alertIcon"></div>
+            <div class="alert-title" id="alertTitle"></div>
+            <div class="alert-message" id="alertMessage"></div>
+            <div class="alert-buttons" id="alertButtons"></div>
+        </div>
+    </div>
+
+<script>
+    /* ================= BASES DE DATOS ================= */
+    const DB_PERSIST_KEYS = ['dbClientesV5', 'dbPrestamosV5', 'dbConfigV5', 'dbPrestamistasV1'];
+    const DB_DEFAULTS = {
+        dbClientesV5: [],
+        dbPrestamosV5: [],
+        dbConfigV5: { nombre: "Nexo Cero Lag", tel: "", nit: "", direccion: "", msj: "Gracias por preferirnos" },
+        dbPrestamistasV1: []
+    };
+
+    function parseJSONSafe(txt, fallback) {
+        try { return JSON.parse(txt); } catch(_) { return fallback; }
+    }
+
+    let _idbDb = null;
+    function openAppDB() {
+        if(_idbDb) return Promise.resolve(_idbDb);
+        return new Promise((resolve, reject) => {
+            if(!window.indexedDB) return reject(new Error('IndexedDB no disponible'));
+            const req = indexedDB.open('prestamos_local_db', 1);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if(!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+            };
+            req.onsuccess = () => { _idbDb = req.result; resolve(_idbDb); };
+            req.onerror = () => reject(req.error || new Error('No se pudo abrir IndexedDB'));
+        });
+    }
+
+    async function idbGet(key) {
+        const db = await openAppDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('kv', 'readonly');
+            const st = tx.objectStore('kv');
+            const rq = st.get(key);
+            rq.onsuccess = () => resolve(rq.result);
+            rq.onerror = () => reject(rq.error);
+        });
+    }
+
+    async function idbSet(key, value) {
+        const db = await openAppDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('kv', 'readwrite');
+            tx.objectStore('kv').put(value, key);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
+    async function bootstrapPersistence() {
+        if(!window.indexedDB) return;
+        for(const key of DB_PERSIST_KEYS) {
+            const localVal = localStorage.getItem(key);
+            const dbVal = await idbGet(key);
+            if(dbVal == null && localVal != null) {
+                await idbSet(key, localVal);
+            } else if(dbVal != null && localVal == null) {
+                localStorage.setItem(key, dbVal);
+            } else if(dbVal != null && localVal != null) {
+                localStorage.setItem(key, dbVal);
+            } else if(dbVal == null && localVal == null) {
+                const def = DB_DEFAULTS[key];
+                if(def !== undefined) {
+                    const txt = JSON.stringify(def);
+                    localStorage.setItem(key, txt);
+                    await idbSet(key, txt);
+                }
+            }
+        }
+    }
+
+    function hookLocalStorageToIndexedDB() {
+        const originalSetItem = localStorage.setItem.bind(localStorage);
+        localStorage.setItem = function(key, value) {
+            originalSetItem(key, value);
+            if(DB_PERSIST_KEYS.includes(key)) {
+                idbSet(key, value).catch(err => console.warn('IDB sync set error:', err));
+            }
+        };
+    }
+
+    function aplicarConfigEnUI() {
+        document.getElementById('ui-nombre-empresa').innerText = dbConfig.nombre;
+        document.getElementById('cfgNombre').value = dbConfig.nombre;
+        document.getElementById('cfgTel').value = dbConfig.tel;
+        document.getElementById('cfgNit').value = dbConfig.nit || '';
+        document.getElementById('cfgDireccion').value = dbConfig.direccion || '';
+        document.getElementById('cfgMsj').value = dbConfig.msj;
+        document.getElementById('cfgQrEnable').checked = dbConfig.qrEnabled || false;
+        document.getElementById('cfgQrLink').value = dbConfig.qrLink || '';
+        if(dbConfig.logo) document.getElementById('cfgLogoPreview').innerHTML = `<img src="${dbConfig.logo}" style="width:100%; height:100%; object-fit:cover">`;
+        else document.getElementById('cfgLogoPreview').innerHTML = '';
+    }
+
+    async function inicializarPersistenciaSinHost() {
+        try {
+            hookLocalStorageToIndexedDB();
+            await bootstrapPersistence();
+
+            dbClientes = parseJSONSafe(localStorage.getItem('dbClientesV5'), []);
+            dbPrestamos = parseJSONSafe(localStorage.getItem('dbPrestamosV5'), []);
+            dbConfig = parseJSONSafe(localStorage.getItem('dbConfigV5'), DB_DEFAULTS.dbConfigV5);
+            dbPrestamistas = parseJSONSafe(localStorage.getItem('dbPrestamistasV1'), []);
+
+            aplicarConfigEnUI();
+            renderizarPrestamistas();
+            comprobarSesion();
+            actualizarControlesPorRol();
+            renderizarDashboard();
+            console.log('Persistencia local activa: IndexedDB + sincronización localStorage');
+        } catch(err) {
+            console.warn('IndexedDB no disponible. Se usará localStorage.', err);
+            aplicarConfigEnUI();
+            renderizarPrestamistas();
+            comprobarSesion();
+            actualizarControlesPorRol();
+            renderizarDashboard();
+        }
+    }
+
+    let dbClientes = JSON.parse(localStorage.getItem('dbClientesV5')) || [];
+    let dbPrestamos = JSON.parse(localStorage.getItem('dbPrestamosV5')) || [];
+    let dbConfig = JSON.parse(localStorage.getItem('dbConfigV5')) || { nombre: "Nexo Cero Lag", tel: "", nit: "", direccion: "", msj: "Gracias por preferirnos" };
+
+    // Inicialización
+    aplicarConfigEnUI();
+    
+    // Tema Oscuro
+    function toggleTema() {
+        const esOscuro = document.body.classList.toggle('dark-mode');
+        localStorage.setItem('temaOscuroV5', esOscuro);
+    }
+    if(localStorage.getItem('temaOscuroV5') === 'true') document.body.classList.add('dark-mode');
+
+    /* ================= LÓGICA DE FECHAS Y ESTADO ================= */
+    function calcularVencimiento(fechaIni, tipo, cant) {
+        let d = new Date(fechaIni + "T12:00:00"); 
+        if(tipo === 'dias') d.setDate(d.getDate() + cant);
+        if(tipo === 'semanas') d.setDate(d.getDate() + (cant * 7));
+        if(tipo === 'meses') d.setMonth(d.getMonth() + cant);
+        return d.toISOString().split("T")[0];
+    }
+
+    function evaluarEstado(p) {
+        if (p.saldoRestante <= 0) return { t: "Pagado", c: "bg-success" };
+        const hoy = new Date(); hoy.setHours(0,0,0,0);
+        const venc = new Date(p.fechaVenc + "T12:00:00"); venc.setHours(0,0,0,0);
+        const diffDias = Math.ceil((venc - hoy) / (1000 * 60 * 60 * 24));
+        
+        if (diffDias < 0) return { t: "Vencido", c: "bg-danger", moraActiva: true, dias: Math.abs(diffDias) };
+        if (diffDias <= 3) return { t: "Por vencer", c: "bg-warning", moraActiva: false, dias: diffDias };
+        return { t: "Activo", c: "bg-primary", moraActiva: false, dias: diffDias };
+    }
+
+    /* ================= RENDERIZADO PRINCIPAL ================= */
+    function renderizarDashboard() {
+        const tbody = document.getElementById('tablaPrestamos');
+        tbody.innerHTML = '';
+        let cap = 0, intMora = 0, cobrado = 0, activos = 0;
+
+        let prestamosVista = [...dbPrestamos].sort((a,b) => new Date(a.fechaVenc) - new Date(b.fechaVenc));
+
+        prestamosVista.forEach(p => {
+            const cli = dbClientes.find(c => c.id === p.clienteId) || { nombre: "Eliminado", cedula: "" };
+            const est = evaluarEstado(p);
+            
+            let moraAplicada = (est.moraActiva && p.montoMora > 0) ? p.montoMora : 0;
+            let saldoReal = p.saldoRestante + moraAplicada;
+
+            if(est.t !== "Pagado") {
+                cap += p.montoPrestado;
+                intMora += p.montoInteres + moraAplicada;
+                activos++;
+            }
+            cobrado += p.totalPagado;
+
+            let filaMora = moraAplicada > 0 ? `<br><small style="color:var(--danger)">+ Mora: $${moraAplicada}</small>` : '';
+
+            tbody.innerHTML += `
+                <tr>
+                    <td><strong>${cli.nombre}</strong><br><small style="color:var(--gray)">C. ${cli.cedula}</small></td>
+                    <td><small>${p.cantPlazo} ${p.tipoPlazo}<br>Vence: <b style="color:var(--text-main)">${p.fechaVenc}</b></small></td>
+                    <td>Deuda: $${(p.montoTotal + moraAplicada).toFixed(2)}<br><span style="color:var(--success)">Pagó: $${p.totalPagado.toFixed(2)}</span></td>
+                    <td style="font-weight:bold; color:var(--danger);">$${saldoReal.toFixed(2)}${filaMora}</td>
+                    <td><span class="badge ${est.c}">${est.t} ${est.dias !== undefined ? '('+est.dias+'d)' : ''}</span></td>
+                    <td><button class="btn btn-primary btn-small" onclick="abrirGestion(${p.id})">Cobrar/Ver</button></td>
+                </tr>`;
+        });
+
+        document.getElementById('dash-capital').innerText = `$${cap.toFixed(2)}`;
+        document.getElementById('dash-ganancia').innerText = `$${intMora.toFixed(2)}`;
+        document.getElementById('dash-cobrado').innerText = `$${cobrado.toFixed(2)}`;
+        document.getElementById('dash-activos').innerText = activos;
+    }
+
+    /* ================= GESTIÓN DE CLIENTES ================= */
+    function mostrarFormCliente(titulo = 'Registrar Nuevo Cliente') { 
+        const h = document.querySelector('#formNuevoCliente h4');
+        h.innerText = titulo;
+        document.getElementById('formNuevoCliente').classList.add('active'); }
+    
+    // esta definición se mantiene como la única; actualizaremos el encabezado dentro
+    // más abajo para que al pulsar "Editar" cambie el texto.
+
+    function ocultarFormCliente() { 
+        // dejar título por defecto para la próxima apertura
+        const h = document.querySelector('#formNuevoCliente h4');
+        h.innerText = 'Registrar Nuevo Cliente';
+        document.getElementById('formNuevoCliente').classList.remove('active'); 
+        document.getElementById('cliId').value = '';
+        document.getElementById('cliNombre').value = '';
+        document.getElementById('cliCedula').value = '';
+        document.getElementById('cliTelefono').value = '';
+        document.getElementById('cliFotoCedula').value = '';
+        document.getElementById('cliFotoGarantia').value = '';
+        const previewCed = document.getElementById('previewCedula');
+        const previewGar = document.getElementById('previewGarantia');
+        previewCed.style.display = 'none';
+        previewCed.src = '';
+        previewCed.removeAttribute('data-base64');
+        previewGar.style.display = 'none';
+        previewGar.src = '';
+        previewGar.removeAttribute('data-base64');
+    }
+
+    function previsualizar(input, imgId) {
+        if (!input.files || !input.files[0]) return;
+        
+        const file = input.files[0];
+        
+        // Validar tipo de archivo
+        if (!file.type.startsWith('image/')) {
+            alert('⚠️ Por favor selecciona un archivo de imagen válido.');
+            input.value = '';
+            return;
+        }
+        
+        // Validar tamaño máximo (5MB)
+        const MAX_SIZE = 5 * 1024 * 1024;
+        if (file.size > MAX_SIZE) {
+            alert('⚠️ El archivo es muy grande. Máximo 5MB.');
+            input.value = '';
+            return;
+        }
+        
+        const reader = new FileReader();
+        
+        reader.onerror = function() {
+            alert('❌ Error al leer el archivo');
+            input.value = '';
+        };
+        
+        reader.onload = function(e) {
+            try {
+                const img = new Image();
+                
+                img.onerror = function() {
+                    alert('❌ No se pudo cargar la imagen');
+                    input.value = '';
+                };
+                
+                img.onload = function() {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 500;
+                        const scaleSize = MAX_WIDTH / img.width;
+                        canvas.width = MAX_WIDTH;
+                        canvas.height = img.height * scaleSize;
+                        const ctx = canvas.getContext('2d');
+                        
+                        if (!ctx) {
+                            alert('❌ Error al procesar la imagen');
+                            return;
+                        }
+                        
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                        const preview = document.getElementById(imgId);
+                        preview.src = dataUrl;
+                        preview.style.display = 'block';
+                        preview.setAttribute('data-base64', dataUrl);
+                    } catch (err) {
+                        alert('❌ Error al comprimir la imagen');
+                    }
+                };
+                img.src = e.target.result;
+            } catch (err) {
+                alert('❌ Error al procesar el archivo');
+                input.value = '';
+            }
+        };
+        
+        reader.readAsDataURL(file);
+    }
+
+    function guardarCliente() {
+        const nom = document.getElementById('cliNombre').value.trim();
+        if(!nom) {
+            mostrarAlerta('Nombre Requerido', 'El nombre del cliente es obligatorio', 'error');
+            return;
+        }
+        
+        const cedula = document.getElementById('cliCedula').value.trim();
+        const telefono = document.getElementById('cliTelefono').value.trim();
+        const fotoCedula = document.getElementById('previewCedula').getAttribute('data-base64') || "";
+        const fotoGarantia = document.getElementById('previewGarantia').getAttribute('data-base64') || "";
+        const idEdit = document.getElementById('cliId').value;
+        
+        if(cedula && dbClientes.some(c => c.cedula === cedula && c.id != idEdit)) {
+            mostrarAlerta('Cédula Duplicada', 'Ya existe un cliente con esta cédula', 'error');
+            return;
+        }
+        
+        if(idEdit) {
+            // editar
+            const c = dbClientes.find(x=>x.id==idEdit);
+            if(c) {
+                c.nombre = nom;
+                c.cedula = cedula;
+                c.telefono = telefono;
+                c.fotoCedula = fotoCedula;
+                c.fotoGarantia = fotoGarantia;
+                mostrarAlerta('✓ Cliente Actualizado', `${nom} fue actualizado`, 'success');
+            }
+        } else {
+            dbClientes.push({
+                id: Date.now(),
+                nombre: nom,
+                cedula: cedula,
+                telefono: telefono,
+                fotoCedula: fotoCedula,
+                fotoGarantia: fotoGarantia
+            });
+            mostrarAlerta('✓ Cliente Registrado', `${nom} fue registrado exitosamente`, 'success');
+        }
+        
+        localStorage.setItem('dbClientesV5', JSON.stringify(dbClientes));
+        ocultarFormCliente();
+        renderizarClientes();
+    }
+
+    function renderizarClientes() {
+        const tbody = document.getElementById('tablaClientesBody');
+        const filtro = document.getElementById('buscadorClientes').value.toLowerCase();
+        tbody.innerHTML = '';
+
+        dbClientes.filter(c => c.nombre.toLowerCase().includes(filtro) || c.cedula.includes(filtro)).forEach(c => {
+            let docs = "";
+            if(c.fotoCedula) docs += `<button class="btn btn-outline btn-table" onclick="mostrarDocumento('${c.id}', 0)">📄 Ver Cédula</button><br>`;
+            if(c.fotoGarantia) docs += `<button class="btn btn-outline btn-table" onclick="mostrarDocumento('${c.id}', 1)">📄 Ver Garantía</button>`;
+            
+            tbody.innerHTML += `
+                <tr>
+                    <td><strong>${c.nombre}</strong><br><small>C. ${c.cedula || 'N/A'}</small></td>
+                    <td>${c.telefono || 'N/A'}</td>
+                    <td>${docs || '❌ Sin docs'}</td>
+                    <td class="flex-gap">
+                        <button class="btn btn-primary btn-table" onclick="prepararPrestamo(${c.id})">Asignar Deuda</button>
+                        <button class="btn btn-warning btn-table" onclick="editarCliente(${c.id})">✏️ Editar</button>
+                        <button class="btn btn-info btn-table" onclick="abrirAccionesCliente(${c.id})">⋮ Acciones</button>
+                        <button class="btn btn-danger btn-table" onclick="eliminarCliente(${c.id}, '${c.nombre}')">🗑️ Eliminar</button>
+                    </td>
+                </tr>`;
+        });
+    }
+    
+    function editarCliente(clienteId) {
+        const c = dbClientes.find(x=>x.id===clienteId);
+        if(!c) return;
+        // establecer título antes de mostrar para evitar parpadeo
+        mostrarFormCliente('Editar Cliente');
+        document.getElementById('cliId').value = c.id;
+        document.getElementById('cliNombre').value = c.nombre;
+        document.getElementById('cliCedula').value = c.cedula;
+        document.getElementById('cliTelefono').value = c.telefono;
+        if(c.fotoCedula) {
+            const prev = document.getElementById('previewCedula');
+            prev.src = c.fotoCedula; prev.style.display='block'; prev.setAttribute('data-base64', c.fotoCedula);
+        }
+        if(c.fotoGarantia) {
+            const prev = document.getElementById('previewGarantia');
+            prev.src = c.fotoGarantia; prev.style.display='block'; prev.setAttribute('data-base64', c.fotoGarantia);
+        }
+    }
+
+    function abrirAccionesCliente(clienteId) {
+        const c = dbClientes.find(x=>x.id===clienteId);
+        if(!c) return;
+        window.clienteActivoId = clienteId;
+        document.getElementById('accionCliNombre').innerText = c.nombre;
+        // calcular préstamos del cliente
+        const prestamos = dbPrestamos.filter(p => p.clienteId === clienteId);
+        const tot = prestamos.length;
+        const pendientes = prestamos.filter(p => p.saldoRestante > 0).length;
+        const saldados = tot - pendientes;
+        let detalles = '';
+        if(tot === 0) {
+            detalles = '<em>Este cliente no tiene préstamos registrados.</em>';
+        } else {
+            detalles = `<p>Préstamos totales: ${tot} &nbsp;(<span class=\"text-success\">Saldados ${saldados}</span>, <span class=\"text-warning\">Pendientes ${pendientes}</span>)</p>`;
+            detalles += '<ul style="margin:4px 0 0 16px; padding:0; list-style:disc;">';
+            prestamos.forEach(p => {
+                const estado = p.saldoRestante > 0 ? 'Pendiente' : 'Saldado';
+                detalles += `<li>Monto $${p.monto.toFixed(2)} - Saldo $${p.saldoRestante.toFixed(2)} (${estado})</li>`;
+            });
+            detalles += '</ul>';
+        }
+        document.getElementById('accionCliPrestamoDetalles').innerHTML = detalles;
+        abrirModal('modalAccionesCliente');
+    }
+
+    function imprimirCliente() {
+        const id = window.clienteActivoId;
+        const c = dbClientes.find(x=>x.id===id);
+        if(!c) return;
+        const prestamos = dbPrestamos.filter(p => p.clienteId === id);
+        const tot = prestamos.length;
+        const pendientes = prestamos.filter(p => p.saldoRestante > 0).length;
+        const saldados = tot - pendientes;
+        let detallesPrestamos = '';
+        if(tot > 0) {
+            detallesPrestamos = `<p>Préstamos totales: ${tot} (Saldados ${saldados}, Pendientes ${pendientes})</p>`;
+            detallesPrestamos += '<ul>';
+            prestamos.forEach(p => {
+                const estado = p.saldoRestante > 0 ? 'Pendiente' : 'Saldado';
+                detallesPrestamos += `<li>Monto $${p.monto.toFixed(2)} - Saldo $${p.saldoRestante.toFixed(2)} (${estado})</li>`;
+            });
+            detallesPrestamos += '</ul>';
+        }
+        const html = `<div style="font-family:Arial;padding:10px;">
+            <h2>Cliente</h2>
+            <p><strong>Nombre:</strong> ${c.nombre}</p>
+            <p><strong>Cédula:</strong> ${c.cedula||'N/A'}</p>
+            <p><strong>Teléfono:</strong> ${c.telefono||'N/A'}</p>
+            ${detallesPrestamos}
+        </div>`;
+        imprimirReporteEnIframe(html,'A4');
+    }
+
+    function enviarClienteWhatsApp() {
+        const id = window.clienteActivoId;
+        const c = dbClientes.find(x=>x.id===id);
+        if(!c) return;
+        const prestamos = dbPrestamos.filter(p => p.clienteId === id);
+        const tot = prestamos.length;
+        const pendientes = prestamos.filter(p => p.saldoRestante > 0).length;
+        const saldados = tot - pendientes;
+        let texto = `Cliente: ${c.nombre}%0A` +
+            `Cédula: ${c.cedula||'N/A'}%0A` +
+            `Teléfono: ${c.telefono||'N/A'}`;
+        if(tot>0) {
+            texto += `%0APréstamos totales: ${tot} (Saldados ${saldados}, Pendientes ${pendientes})`;
+            prestamos.forEach(p=>{
+                const estado = p.saldoRestante > 0 ? 'Pendiente' : 'Saldado';
+                texto += `%0A- Monto $${p.monto.toFixed(2)}, Saldo $${p.saldoRestante.toFixed(2)} (${estado})`;
+            });
+        }
+        window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`,'_blank');
+    }
+
+    function eliminarCliente(clienteId, nombreCliente) {
+        const prestamosCliente = dbPrestamos.filter(p => p.clienteId === clienteId);
+        
+        if(prestamosCliente.length > 0) {
+            const prestamosActivos = prestamosCliente.filter(p => p.saldoRestante > 0);
+            if(prestamosActivos.length > 0) {
+                mostrarAlerta('No se puede Eliminar', `${nombreCliente} tiene ${prestamosActivos.length} préstamo(s) sin pagar`, 'error');
+                return;
+            }
+        }
+        
+        mostrarAlerta('Confirmar Eliminación', `¿Eliminar a ${nombreCliente}?\n\nEsta acción no se puede deshacer.`, 'warning', [
+            { text: 'Cancelar', action: cerrarAlerta },
+            { text: 'Eliminar', action: () => {
+                dbClientes = dbClientes.filter(c => c.id !== clienteId);
+                localStorage.setItem('dbClientesV5', JSON.stringify(dbClientes));
+                renderizarClientes();
+                cerrarAlerta();
+                mostrarAlerta('✓ Eliminado', `${nombreCliente} fue eliminado exitosamente`, 'success');
+            }, primary: true }
+        ]);
+    }
+    
+    function mostrarDocumento(clienteId, tipo) {
+        const cli = dbClientes.find(c => c.id === parseInt(clienteId));
+        if (!cli) return;
+        
+        const imagen = tipo === 0 ? cli.fotoCedula : cli.fotoGarantia;
+        if (!imagen) {
+            alert("❌ Documento no disponible");
+            return;
+        }
+        
+        const titulo = tipo === 0 ? "Cédula de " + cli.nombre : "Garantía de " + cli.nombre;
+        window.documentoDescargaActual = { nombre: titulo, dataUrl: imagen };
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay active';
+        modal.id = 'modalDocumento';
+        modal.innerHTML = `
+            <div class="modal-content modal-doc">
+                <div class="flex-between mb-lg">
+                    <h2 class="m-0">${titulo}</h2>
+                    <button class="btn btn-outline btn-small" onclick="document.getElementById('modalDocumento').remove()">✕</button>
+                </div>
+                <img src="${imagen}" style="width: 100%; border-radius: 8px; border: 1px solid var(--border);">
+                <div class="mt-lg">
+                    <button class="btn btn-primary" onclick="descargarImagenActual()">📥 Descargar</button>
+                    <button class="btn btn-outline" onclick="document.getElementById('modalDocumento').remove()">Cerrar</button>
+                </div>
+            </div>
+        `;
+        modal.onclick = (e) => { if(e.target === modal) modal.remove(); };
+        document.body.appendChild(modal);
+    }
+    
+    function dataURLToBlob(dataUrl) {
+        const parts = dataUrl.split(',');
+        const mime = (parts[0].match(/:(.*?);/) || [])[1] || 'image/jpeg';
+        const binary = atob(parts[1]);
+        const len = binary.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+        return new Blob([bytes], { type: mime });
+    }
+
+    function getExtFromMime(mime) {
+        if(!mime) return 'jpg';
+        if(mime.includes('png')) return 'png';
+        if(mime.includes('webp')) return 'webp';
+        if(mime.includes('jpeg') || mime.includes('jpg')) return 'jpg';
+        return 'jpg';
+    }
+
+    async function descargarBlobConFallback(blob, fileName) {
+        const isAndroid = /Android/i.test(navigator.userAgent || '');
+        try {
+            if (isAndroid && navigator.canShare && navigator.share) {
+                const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
+                if (navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], title: fileName });
+                    return;
+                }
+            }
+        } catch(_) {}
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        if (isAndroid) {
+            setTimeout(() => {
+                try { window.open(url, '_blank'); } catch(_) {}
+            }, 120);
+        }
+
+        setTimeout(() => URL.revokeObjectURL(url), 6000);
+    }
+
+    function descargarImagenActual() {
+        const d = window.documentoDescargaActual;
+        if(!d || !d.dataUrl) {
+            mostrarAlerta('Error en Descarga', 'No hay imagen disponible para descargar.', 'error');
+            return;
+        }
+        descargarImagen(d.nombre, d.dataUrl);
+    }
+
+    async function descargarImagen(nombre, dataUrl) {
+        try {
+            let blob;
+            if ((dataUrl || '').startsWith('data:')) {
+                blob = dataURLToBlob(dataUrl);
+            } else {
+                const resp = await fetch(dataUrl);
+                blob = await resp.blob();
+            }
+
+            const safeName = (nombre || 'imagen').replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-]/g, '');
+            const ext = getExtFromMime(blob.type);
+            await descargarBlobConFallback(blob, `${safeName}.${ext}`);
+            mostrarAlerta('✓ Imagen Descargada', 'El archivo se descargó correctamente', 'success');
+        } catch(err) {
+            console.error(err);
+            mostrarAlerta('Error en Descarga', 'No fue posible descargar la imagen. Intenta de nuevo.', 'error');
+        }
+    }
+
+    /* ================= BÚSQUEDA DE CLIENTES EN MODAL PRÉSTAMO ================= */
+    function filtrarClientesModal() {
+        const filtro = document.getElementById('buscarClientePrestamo').value.toLowerCase();
+        const dropdown = document.getElementById('dropdownClientes');
+        
+        if(!filtro) {
+            dropdown.classList.remove('active');
+            return;
+        }
+        
+        const clientesFiltrados = dbClientes.filter(c => 
+            c.nombre.toLowerCase().includes(filtro) || c.cedula.includes(filtro)
+        );
+        
+        dropdown.innerHTML = '';
+        if(clientesFiltrados.length === 0) {
+            dropdown.innerHTML = '<div class="client-item">No hay clientes</div>';
+            dropdown.classList.add('active');
+            return;
+        }
+        
+        clientesFiltrados.forEach(cli => {
+            const item = document.createElement('div');
+            item.className = 'client-item';
+            item.innerHTML = `<div class="client-item-name">${cli.nombre}</div><div class="client-item-cedula">C. ${cli.cedula || 'N/A'}</div>`;
+            item.onclick = () => seleccionarClientePrestamo(cli);
+            dropdown.appendChild(item);
+        });
+        dropdown.classList.add('active');
+    }
+    
+    function mostrarClientesDropdown() {
+        if(dbClientes.length === 0) return;
+        const dropdown = document.getElementById('dropdownClientes');
+        const val = document.getElementById('buscarClientePrestamo').value.toLowerCase();
+        
+        if(!val) {
+            const clientesFiltrados = dbClientes;
+            dropdown.innerHTML = '';
+            clientesFiltrados.slice(0, 8).forEach(cli => {
+                const item = document.createElement('div');
+                item.className = 'client-item';
+                item.innerHTML = `<div class="client-item-name">${cli.nombre}</div><div class="client-item-cedula">C. ${cli.cedula || 'N/A'}</div>`;
+                item.onclick = () => seleccionarClientePrestamo(cli);
+                dropdown.appendChild(item);
+            });
+            dropdown.classList.add('active');
+        }
+    }
+    
+    function seleccionarClientePrestamo(cli) {
+        document.getElementById('buscarClientePrestamo').value = cli.nombre;
+        document.getElementById('idClienteSeleccionado').value = cli.id;
+        document.getElementById('lblClienteSeleccionado').innerText = `Cliente: ${cli.nombre}`;
+        document.getElementById('lblClienteSeleccionado').style.display = 'block';
+        document.getElementById('clienteSeleccionadoInfo').innerText = `✓ ${cli.nombre} seleccionado`;
+        document.getElementById('dropdownClientes').classList.remove('active');
+        document.getElementById('pFechaInicio').valueAsDate = new Date();
+        // mostrar boton de limpiar si existe
+        const btn = document.getElementById('btnLimpiarCliente');
+        if(btn) btn.style.display = 'inline-block';
+    }
+
+    function limpiarClienteSeleccionadoPrestamo() {
+        document.getElementById('buscarClientePrestamo').value = '';
+        document.getElementById('idClienteSeleccionado').value = '';
+        document.getElementById('lblClienteSeleccionado').innerText = '';
+        document.getElementById('lblClienteSeleccionado').style.display = 'none';
+        document.getElementById('clienteSeleccionadoInfo').innerText = 'Selecciona un cliente';
+        document.getElementById('dropdownClientes').classList.remove('active');
+        const btn = document.getElementById('btnLimpiarCliente');
+        if(btn) btn.style.display = 'none';
+    }
+
+    /* ================= CREAR PRÉSTAMOS ================= */
+    function prepararPrestamo(clienteId) {
+        const cli = dbClientes.find(c => c.id === clienteId);
+        seleccionarClientePrestamo(cli);
+        cerrarModal('modalClientes');
+        abrirModal('modalCrearPrestamo');
+    }
+
+    function guardarPrestamo() {
+        const cId = parseInt(document.getElementById('idClienteSeleccionado').value);
+        if(!cId || cId === 0) {
+            mostrarAlerta('Seleccionar Cliente', 'Por favor selecciona un cliente primero', 'warning');
+            return;
+        }
+        const monto = parseFloat(document.getElementById('pMonto').value);
+        const interes = parseFloat(document.getElementById('pInteres').value);
+        const tipoPlazo = document.getElementById('pTipoPlazo').value;
+        const cantPlazo = parseInt(document.getElementById('pCantPlazo').value);
+        const fechaIni = document.getElementById('pFechaInicio').value;
+        const mora = parseFloat(document.getElementById('pMora').value) || 0;
+
+        if(!monto || !fechaIni) {
+            mostrarAlerta('Campos Requeridos', 'Completa Capital y Fecha Inicio', 'error');
+            return;
+        }
+
+        const montoInteres = monto * (interes / 100);
+        const total = monto + montoInteres;
+
+        dbPrestamos.push({
+            id: Date.now(),
+            clienteId: cId,
+            montoPrestado: monto,
+            montoInteres: montoInteres,
+            montoTotal: total,
+            tipoPlazo: tipoPlazo,
+            cantPlazo: cantPlazo,
+            fechaInicio: fechaIni,
+            fechaVenc: calcularVencimiento(fechaIni, tipoPlazo, cantPlazo),
+            montoMora: mora,
+            moraAplicadaHist: 0,
+            totalPagado: 0,
+            saldoRestante: total,
+            pagos: []
+        });
+
+        localStorage.setItem('dbPrestamosV5', JSON.stringify(dbPrestamos));
+        cerrarModal('modalCrearPrestamo');
+        renderizarDashboard();
+    }
+
+    /* ================= COBROS Y EDICIÓN ================= */
+    let prestamoActivo = null;
+
+    function abrirGestion(idPrestamo) {
+        prestamoActivo = dbPrestamos.find(x => x.id === idPrestamo);
+        const cli = dbClientes.find(c => c.id === prestamoActivo.clienteId) || { nombre: "Desc.", cedula: "" };
+        const est = evaluarEstado(prestamoActivo);
+        
+        let moraAplicada = (est.moraActiva && prestamoActivo.montoMora > 0) ? prestamoActivo.montoMora : 0;
+        let saldoReal = prestamoActivo.saldoRestante + moraAplicada;
+
+        document.getElementById('infoPago').innerHTML = `
+            <strong>👤 Cliente:</strong> ${cli.nombre}<br>
+            <strong>💰 Préstamo de:</strong> $${prestamoActivo.montoTotal.toFixed(2)} (${prestamoActivo.cantPlazo} ${prestamoActivo.tipoPlazo})<br>
+            <strong>📅 Vencimiento:</strong> ${prestamoActivo.fechaVenc} <span class="badge ${est.c}">${est.t}</span><br>
+            ${moraAplicada > 0 ? `<span class="text-danger"><strong>⚠️ Penalidad por atraso sumada:</strong> +$${moraAplicada.toFixed(2)}</span><br>` : ''}
+            <div class="info-divider"></div>
+            <strong class="saldo-display">Saldo a Pagar: <span class="text-danger">$${saldoReal.toFixed(2)}</span></strong>
+        `;
+
+        let hist = "<strong>Historial de Recibos:</strong><br>";
+        prestamoActivo.pagos.forEach((pg, idx) => {
+            const esReembolso = pg.monto < 0;
+            const claseColor = esReembolso ? 'pago-monto-warning' : 'pago-monto-success';
+            hist += `<div class="pago-item">
+                <div class="pago-info">
+                    <div>${pg.fecha}</div>
+                </div>
+                <div class="pago-monto ${claseColor}">${esReembolso ? '' : '+'}$${pg.monto.toFixed(2)}</div>
+                <div class="pago-actions">
+                    <button class="btn btn-outline pago-btn" onclick="editarPago(${idx})">✏️</button>
+                    <button class="btn btn-danger pago-btn" onclick="eliminarPago(${idx})">🗑️</button>
+                </div>
+            </div>`;
+        });
+        document.getElementById('historialPagos').innerHTML = hist;
+
+        const btnCobrar = document.getElementById('btnAbonar');
+        document.getElementById('montoAbono').value = '';
+        if(saldoReal <= 0) { btnCobrar.disabled = true; btnCobrar.innerText = "Liquidado"; }
+        else { btnCobrar.disabled = false; btnCobrar.innerText = "Cobrar"; btnCobrar.onclick = () => procesarPago(saldoReal, moraAplicada); }
+
+        document.getElementById('btnBorrarPrestamo').onclick = () => {
+            mostrarAlerta('Eliminar Préstamo', `¿Eliminar este préstamo permanentemente?\n\nEsta acción no se puede deshacer.`, 'danger', [
+                { text: 'Cancelar', action: cerrarAlerta },
+                { text: 'Eliminar', action: () => {
+                    dbPrestamos = dbPrestamos.filter(x => x.id !== prestamoActivo.id);
+                    localStorage.setItem('dbPrestamosV5', JSON.stringify(dbPrestamos));
+                    cerrarAlerta();
+                    cerrarModal('modalPagos'); 
+                    renderizarDashboard();
+                    mostrarAlerta('✓ Eliminado', 'El préstamo fue eliminado', 'success');
+                }, primary: true }
+            ]);
+        };
+
+        abrirModal('modalPagos');
+    }
+
+    function procesarPago(saldoReal, moraAplicada) {
+        const abono = parseFloat(document.getElementById('montoAbono').value);
+        if(!abono || abono <= 0) {
+            mostrarAlerta('Monto Inválido', 'El monto debe ser mayor a 0', 'error');
+            return;
+        }
+
+        // Validar y calcular sobra si la hay
+        let sobra = 0;
+        if(abono > saldoReal + 0.1) {
+            sobra = abono - saldoReal;
+            mostrarAlerta('Pago Excede Deuda', `Deuda: $${saldoReal.toFixed(2)}\nPago: $${abono.toFixed(2)}\nTe sobra: $${sobra.toFixed(2)}\n\n¿Deseas continuar registrando solo lo que corresponde ($${saldoReal.toFixed(2)})?`, 'info', [
+                { text: 'Registrar Todo', action: () => {
+                    cerrarAlerta();
+                    registrarPagoFinal(abono, saldoReal, moraAplicada, sobra);
+                }},
+                { text: 'Ajustar al Saldo', action: () => {
+                    cerrarAlerta();
+                    document.getElementById('montoAbono').value = saldoReal.toFixed(2);
+                    registrarPagoFinal(saldoReal, saldoReal, moraAplicada, 0);
+                }}
+            ]);
+            return;
+        }
+
+        registrarPagoFinal(abono, saldoReal, moraAplicada, sobra);
+    }
+
+    function registrarPagoFinal(abono, saldoReal, moraAplicada, sobra) {
+        if (moraAplicada > 0) {
+            prestamoActivo.saldoRestante += moraAplicada;
+            prestamoActivo.moraAplicadaHist += moraAplicada;
+            prestamoActivo.montoMora = 0; 
+        }
+
+        prestamoActivo.saldoRestante -= abono;
+        prestamoActivo.totalPagado += abono;
+        if(prestamoActivo.saldoRestante < 0.1) prestamoActivo.saldoRestante = 0;
+
+        let fechaPago = new Date().toLocaleString();
+        let concepto = '';
+        if(sobra > 0.1) concepto = `Pago ${saldoReal < abono - 0.1 ? 'parcial' : 'completo'} (Te sobra $${sobra.toFixed(2)})`;
+        prestamoActivo.pagos.push({ fecha: fechaPago, monto: abono, concepto: concepto });
+
+        localStorage.setItem('dbPrestamosV5', JSON.stringify(dbPrestamos));
+        renderizarDashboard();
+        
+        cerrarModal('modalPagos');
+        generarTicketTermico(prestamoActivo, abono, fechaPago);
+    }
+
+    /* === EDICIÓN Y ELIMINAR PAGOS === */
+    let editPagoIndexActual = null;
+
+    function editarPago(indexPago) {
+        const pago = prestamoActivo.pagos[indexPago];
+        editPagoIndexActual = indexPago;
+        
+        document.getElementById('editPagoIndex').value = indexPago;
+        document.getElementById('editPagoMonto').value = pago.monto.toFixed(2);
+        
+        // Convertir fecha a formato datetime-local
+        let fechaFormato = pago.fecha;
+        try {
+            const d = new Date(pago.fecha);
+            if(!isNaN(d)) {
+                fechaFormato = d.toISOString().slice(0, 16);
+            }
+        } catch(e) {}
+        document.getElementById('editPagoFecha').value = fechaFormato;
+        document.getElementById('editPagoConcepto').value = pago.concepto || '';
+        
+        abrirModal('modalEditarPago');
+    }
+
+    function guardarEdicionPago() {
+        const indexPago = parseInt(document.getElementById('editPagoIndex').value);
+        const nuevoMonto = parseFloat(document.getElementById('editPagoMonto').value);
+        const nuevaFecha = document.getElementById('editPagoFecha').value;
+        const nuevoConcepto = document.getElementById('editPagoConcepto').value.trim();
+        
+        if(!nuevoMonto || nuevoMonto <= 0) {
+            mostrarAlerta('Error', 'Monto inválido', 'error');
+            return;
+        }
+        
+        const pago = prestamoActivo.pagos[indexPago];
+        const diferencia = nuevoMonto - pago.monto;
+        
+        pago.monto = nuevoMonto;
+        pago.concepto = nuevoConcepto;
+        if(nuevaFecha) pago.fecha = new Date(nuevaFecha).toLocaleString();
+        
+        prestamoActivo.totalPagado += diferencia;
+        prestamoActivo.saldoRestante -= diferencia;
+        if(prestamoActivo.saldoRestante < 0) prestamoActivo.saldoRestante = 0;
+        
+        localStorage.setItem('dbPrestamosV5', JSON.stringify(dbPrestamos));
+        renderizarDashboard();
+        cerrarModal('modalEditarPago');
+        abrirGestion(prestamoActivo.id);
+        
+        // Mostrar alerta para reimprimir
+        mostrarAlerta('✓ Recibo Actualizado', `El pago fue actualizado a $${nuevoMonto.toFixed(2)}\n\n¿Deseas reimprimir el ticket?`, 'success', [
+            { text: 'No reimprimir', action: cerrarAlerta },
+            { text: 'Reimprimir Ticket', action: () => {
+                cerrarAlerta();
+                let fechaPago = pago.fecha || new Date().toLocaleString();
+                generarTicketTermico(prestamoActivo, nuevoMonto, fechaPago);
+            }, primary: true }
+        ]);
+    }
+    
+    function eliminarPago(indexPago) {
+        const pago = prestamoActivo.pagos[indexPago];
+        mostrarAlerta('Confirmar Eliminación', `¿Eliminar pago de $${pago.monto.toFixed(2)}?\n\nEsta acción no se puede deshacer.`, 'warning', [
+            { text: 'Cancelar', action: cerrarAlerta },
+            { text: 'Eliminar', action: () => { 
+                prestamoActivo.totalPagado -= pago.monto;
+                prestamoActivo.saldoRestante += pago.monto;
+                prestamoActivo.pagos.splice(indexPago, 1);
+                localStorage.setItem('dbPrestamosV5', JSON.stringify(dbPrestamos));
+                renderizarDashboard();
+                cerrarAlerta();
+                abrirGestion(prestamoActivo.id);
+                mostrarAlerta('✓ Eliminado', 'El pago fue eliminado correctamente', 'success');
+            }, primary: true }
+        ]);
+    }
+
+    /* === NUEVO: EDICIÓN DE DEUDA === */
+    function abrirEdicionDeuda() {
+        const p = prestamoActivo;
+        document.getElementById('eIdPrestamo').value = p.id;
+        document.getElementById('eMonto').value = p.montoPrestado;
+        // Calcular el porcentaje original para mostrarlo
+        const porcentajeOrg = Math.round((p.montoInteres / p.montoPrestado) * 100);
+        document.getElementById('eInteres').value = porcentajeOrg;
+        document.getElementById('eTipoPlazo').value = p.tipoPlazo;
+        document.getElementById('eCantPlazo').value = p.cantPlazo;
+        document.getElementById('eFechaInicio').value = p.fechaInicio;
+        document.getElementById('eMora').value = p.montoMora;
+
+        cerrarModal('modalPagos');
+        abrirModal('modalEditarPrestamo');
+    }
+
+    function guardarEdicionDeuda() {
+        const id = parseInt(document.getElementById('eIdPrestamo').value);
+        const monto = parseFloat(document.getElementById('eMonto').value);
+        const interes = parseFloat(document.getElementById('eInteres').value);
+        const tipoPlazo = document.getElementById('eTipoPlazo').value;
+        const cantPlazo = parseInt(document.getElementById('eCantPlazo').value);
+        const fechaIni = document.getElementById('eFechaInicio').value;
+        const mora = parseFloat(document.getElementById('eMora').value) || 0;
+
+        let p = dbPrestamos.find(x => x.id === id);
+
+        const montoInteres = monto * (interes / 100);
+        const nuevoTotalDeuda = monto + montoInteres;
+
+        // Recalcular saldo respetando lo que ya pagó
+        let nuevoSaldo = nuevoTotalDeuda - p.totalPagado;
+        if(nuevoSaldo < 0) nuevoSaldo = 0; // Por si bajan la deuda a menos de lo que ya pagó
+
+        p.montoPrestado = monto;
+        p.montoInteres = montoInteres;
+        p.montoTotal = nuevoTotalDeuda;
+        p.tipoPlazo = tipoPlazo;
+        p.cantPlazo = cantPlazo;
+        p.fechaInicio = fechaIni;
+        p.fechaVenc = calcularVencimiento(fechaIni, tipoPlazo, cantPlazo);
+        p.montoMora = mora;
+        p.saldoRestante = nuevoSaldo;
+
+        localStorage.setItem('dbPrestamosV5', JSON.stringify(dbPrestamos));
+        cerrarModal('modalEditarPrestamo');
+        renderizarDashboard();
+        abrirGestion(p.id); // Reabrimos el panel para que vea los cambios
+    }
+
+    /* ================= IMPRESIONES (TICKET Y REPORTE) ================= */
+    function generarTicketTermico(p, abono, fechaPago) {
+        const cli = dbClientes.find(c => c.id === p.clienteId) || { nombre: "Desc", cedula: "" };
+        const ticketNum = Math.floor(Math.random()*900000)+100000;
+        
+        // Guardar en ventana para compartir
+        window.ticketActual = {
+            ticket_num: ticketNum,
+            cliente_nombre: cli.nombre,
+            cliente_cedula: cli.cedula,
+            fecha_pago: fechaPago,
+            monto_pago: abono,
+            deuda_total: p.montoTotal + p.moraAplicadaHist,
+            pagado_total: p.totalPagado,
+            saldo_restante: p.saldoRestante,
+            prestamo_id: p.id,
+            empresa_nombre: dbConfig.nombre,
+            empresa_tel: dbConfig.tel,
+            empresa_msj: dbConfig.msj,
+            fecha_inicio: p.fechaInicio,
+            fecha_venc: p.fechaVenc,
+            monto_prestado: p.montoPrestado,
+            interes_pct: ((p.montoInteres/p.montoPrestado)*100).toFixed(0),
+            plazo: `${p.cantPlazo} ${p.tipoPlazo}`
+        };
+
+        const tk = document.getElementById('ticket-impresion');
+
+        // Logo y QR opcionales
+        const logoHtml = dbConfig.logo ? `<div style="text-align:center; margin-bottom:6px;"><img src="${dbConfig.logo}" style="max-width:48px; max-height:48px; display:block; margin:0 auto;"></div>` : '';
+        const empresaTitle = !dbConfig.logo ? `<div class="ticket-title">${dbConfig.nombre.toUpperCase()}</div>` : `<div style="text-align:center; font-weight:bold; font-size:calc(var(--ticket-font-size)+1px); margin-bottom:4px;">${dbConfig.nombre}</div>`;
+
+        let qrHtml = '';
+        if(dbConfig.qrEnabled) {
+            const qrData = (dbConfig.qrLink && dbConfig.qrLink.trim()) ? dbConfig.qrLink.trim() : `TICKET:${ticketNum}|${dbConfig.nombre}`;
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}`;
+            qrHtml = `<div style="text-align:center; margin-top:8px;"><img src="${qrUrl}" style="width:70px; height:70px; object-fit:contain;"></div>`;
+        }
+
+        // nueva plantilla estilo factura
+        tk.innerHTML = `
+            <div class="ticket-wrapper">
+                ${logoHtml}
+                <div style="text-align:center; font-weight:bold; font-size:calc(var(--ticket-font-size)+1px);">${dbConfig.nombre.toUpperCase()}</div>
+                <div class="ticket-row"><span>NIT:</span><span>${dbConfig.nit||''}</span></div>
+                <div class="ticket-row"><span>Dirección:</span><span>${dbConfig.direccion||''}</span></div>
+                <div class="ticket-row"><span>Tel:</span><span>${dbConfig.tel||'N/A'}</span></div>
+                <div class="ticket-row"><span>Factura No:</span><span>${ticketNum}</span></div>
+                <div class="ticket-row"><span>Fecha:</span><span>${fechaPago}</span></div>
+                <div class="ticket-row"><span>Cliente:</span><span>${cli.nombre}</span></div>
+                <div class="ticket-divider-container"></div>
+                <div class="ticket-row"><span>COD</span><span>DESCRIP</span><span>PRECIO</span></div>
+                <div class="ticket-row"><span>001</span><span>ABONO</span><span>$${abono.toFixed(2)}</span></div>
+                <div class="ticket-divider-container"></div>
+                <div class="ticket-row"><span>Saldo:</span><span>$${p.saldoRestante.toFixed(2)}</span></div>
+                <div class="ticket-row"><span>Deuda Total:</span><span>$${(p.montoTotal + p.moraAplicadaHist).toFixed(2)}</span></div>
+                <div class="ticket-divider-container"></div>
+                <div class="ticket-footer-text">${dbConfig.msj || ''}</div>
+            </div>
+        `;
+        
+        // Mostrar modal con opciones de compartir/imprimir
+        mostrarOpcionesTicket(ticketNum, cli.nombre, abono);
+    }
+
+    
+    function mostrarOpcionesTicket(numTicket, cliente, monto) {
+            const puedeEditar = usuarioActualEsAdmin();
+        const opcionesHtml = `
+            <div class="ticket-options-card">
+                <h3 class="ticket-options-title">✅ Pago Registrado Exitosamente</h3>
+                <p class="ticket-options-subtitle"><strong>Ticket #${numTicket}</strong> | ${cliente} | Monto: <strong>$${monto.toFixed(2)}</strong></p>
+                
+                <div class="ticket-options-highlight">
+                    <div class="ticket-options-amount">$${monto.toFixed(2)}</div>
+                    <div class="ticket-options-hint">Abono registrado en el sistema</div>
+                </div>
+
+                <div class="ticket-options-grid">
+                    <button class="btn btn-primary" onclick="imprimirTicketActual()">🖨️ Imprimir Ticket</button>
+                    ${puedeEditar ? '<button class="btn btn-info" onclick="abrirEditarTicket()">✏️ Editar Ticket</button>' : ''}
+                    <button class="btn btn-success" onclick="descargarTicketPNG()">📥 Descargar Imagen</button>
+                </div>
+
+                <div class="ticket-options-grid">
+                    <button class="btn btn-outline" onclick="compartirWhatsApp()">📱 WhatsApp</button>
+                    <button class="btn btn-outline" onclick="copiarAlPortapapeles()">📋 Copiar Texto</button>
+                </div>
+
+                <div class="ticket-options-grid-full">
+                    <button class="btn btn-outline" onclick="cerrarOpcionesYRegresar()">Continuar</button>
+                </div>
+            </div>
+        `;
+
+        // Inyectar en un modal temporal
+        const modal = document.createElement('div');
+        modal.id = 'modalTicketOpciones';
+        modal.className = 'modal-overlay active';
+        modal.innerHTML = `<div class="modal-content" style="max-width:500px;">${opcionesHtml}</div>`;
+        modal.onclick = (e) => { if(e.target === modal) modal.remove(); };
+        document.body.appendChild(modal);
+    }
+
+    function imprimirTicketActual() {
+        const tk = document.getElementById('ticket-impresion');
+        if(!tk || !tk.innerHTML.trim()) return alert('No hay ticket para imprimir');
+        imprimirTicketEnIframe(tk.innerHTML);
+    }
+
+    // ======= Editor de ticket independiente =======
+    function abrirEditarTicket() {
+        if(!usuarioActualEsAdmin()) {
+            mostrarAlerta('Acceso Restringido', 'Solo el usuario administrador puede editar el ticket.', 'warning');
+            return;
+        }
+        const tk = document.getElementById('ticket-impresion');
+        if(!tk) return;
+        document.getElementById('txtEditarTicket').value = tk.innerHTML;
+        actualizarPreviewEditarTicket();
+        abrirModal('modalEditarTicket');
+    }
+
+    function actualizarPreviewEditarTicket() {
+        const html = document.getElementById('txtEditarTicket').value;
+        document.getElementById('previewEditarTicket').innerHTML = html;
+    }
+
+    function guardarEdicionTicket() {
+        const html = document.getElementById('txtEditarTicket').value;
+        document.getElementById('ticket-impresion').innerHTML = html;
+        cerrarModal('modalEditarTicket');
+        mostrarAlerta('✓ Modificado','Contenido del ticket actualizado','success');
+    }
+
+    async function descargarTicketPNG() {
+        const tk = document.getElementById('ticket-impresion');
+        html2canvas(tk, {
+            backgroundColor: 'white',
+            scale: 2,
+            width: 230,
+            windowWidth: 230
+        }).then(async canvas => {
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+            if(!blob) throw new Error('No fue posible generar imagen del ticket');
+            const num = window.ticketActual?.ticket_num || Date.now();
+            await descargarBlobConFallback(blob, `Ticket_${num}.png`);
+            mostrarAlerta('✓ Imagen Descargada', 'Ticket exportado correctamente.', 'success');
+        }).catch(() => {
+            // Si html2canvas no está disponible, ofrece alternativa
+            alert('Descargando como PDF...');
+            descargarTicketPDF();
+        });
+    }
+
+    function descargarTicketPDF() {
+        const { jsPDF } = window.jspdf || {};
+        if (!jsPDF) {
+            alert('Por favor, imprime el ticket usando Ctrl+P o el botón Imprimir.');
+            imprimirTicketActual();
+            return;
+        }
+        
+        const doc = new jsPDF({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: [58, 150]
+        });
+
+        doc.setFontSize(11);
+        doc.text('RECIBO DE PAGO', 29, 10, { align: 'center' });
+        doc.setFontSize(8);
+        let y = 20;
+        doc.text(`Ticket #: ${window.ticketActual.ticket_num}`, 5, y); y+=5;
+        doc.text(`Cliente: ${window.ticketActual.cliente_nombre}`, 5, y); y+=5;
+        doc.text(`Abono: $${window.ticketActual.monto_pago.toFixed(2)}`, 5, y); y+=5;
+        doc.text(`Saldo: $${window.ticketActual.saldo_restante.toFixed(2)}`, 5, y);
+
+        doc.save(`Ticket_${window.ticketActual.ticket_num}.pdf`);
+    }
+
+    function compartirWhatsApp() {
+        if (!window.ticketActual) return alert('Error al cargar datos del ticket');
+        
+        const msg = `
+*${dbConfig.nombre}*
+${dbConfig.tel ? '📞 ' + dbConfig.tel : ''}
+
+*RECIBO DE PAGO*
+Ticket #${window.ticketActual.ticket_num}
+
+*Cliente:* ${window.ticketActual.cliente_nombre}
+*Cédula:* ${window.ticketActual.cliente_cedula || 'N/A'}
+
+*Abono Recibido:* $${window.ticketActual.monto_pago.toFixed(2)}
+*Deuda Total:* $${window.ticketActual.deuda_total.toFixed(2)}
+*Pagado Acumulado:* $${window.ticketActual.pagado_total.toFixed(2)}
+*Saldo Pendiente:* $${window.ticketActual.saldo_restante.toFixed(2)}
+
+*Fecha:* ${window.ticketActual.fecha_pago}
+
+${dbConfig.msj}
+        `.trim();
+
+        const url = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+        window.open(url, '_blank');
+    }
+
+    function copiarAlPortapapeles() {
+        if (!window.ticketActual) return alert('Error al cargar datos del ticket');
+        
+        const texto = `
+═══════════════════════════
+RECIBO DE PAGO - ${dbConfig.nombre}
+═══════════════════════════
+
+Ticket #: ${window.ticketActual.ticket_num}
+Fecha: ${window.ticketActual.fecha_pago}
+
+CLIENTE
+├─ Nombre: ${window.ticketActual.cliente_nombre}
+└─ Cédula: ${window.ticketActual.cliente_cedula || 'N/A'}
+
+DETALLE DEL PRÉSTAMO
+├─ Monto Original: $${window.ticketActual.monto_prestado.toFixed(2)}
+├─ Interés (${window.ticketActual.interes_pct}%): $${(window.ticketActual.deuda_total - window.ticketActual.monto_prestado).toFixed(2)}
+├─ Total Deuda: $${window.ticketActual.deuda_total.toFixed(2)}
+└─ Plazo: ${window.ticketActual.plazo}
+
+SU ABONO HOY
+$${window.ticketActual.monto_pago.toFixed(2)}
+
+ESTADO DE CUENTA
+├─ Pagado: $${window.ticketActual.pagado_total.toFixed(2)}
+└─ Saldo Pendiente: $${window.ticketActual.saldo_restante.toFixed(2)}
+
+═══════════════════════════
+${dbConfig.msj}
+═══════════════════════════
+        `.trim();
+
+        navigator.clipboard.writeText(texto).then(() => {
+            alert('✅ Ticket copiado al portapapeles\nPuedes pegarlo en WhatsApp, Email, etc.');
+        }).catch(() => {
+            alert('No fue posible copiar. Intenta manualmente.');
+        });
+    }
+
+    function cerrarOpcionesYRegresar() {
+        const modal = document.getElementById('modalTicketOpciones');
+        if (modal) modal.remove();
+        abrirGestion(window.ticketActual.prestamo_id);
+    }
+
+    function reimprimirTicket(idPrestamo, monto, fecha) {
+        const p = dbPrestamos.find(x => x.id === idPrestamo);
+        const cli = dbClientes.find(c => c.id === p.clienteId) || { nombre: "Desc", cedula: "" };
+        const tk = document.getElementById('ticket-impresion');
+        const fechaCopia = fecha.includes("Copia") ? fecha : fecha + " (Copia)";
+        // logo y qr opcionales
+        const logoHtml = dbConfig.logo ? `<div style="text-align:center; margin-bottom:6px;"><img src="${dbConfig.logo}" style="max-width:48px; max-height:48px; display:block; margin:0 auto;"></div>` : '';
+        const empresaTitle = !dbConfig.logo ? `<div class="ticket-title">${dbConfig.nombre.toUpperCase()}</div>` : `<div style="text-align:center; font-weight:bold; font-size:calc(var(--ticket-font-size)+1px); margin-bottom:4px;">${dbConfig.nombre}</div>`;
+        let qrHtml = '';
+        if(dbConfig.qrEnabled) {
+            const qrData = (dbConfig.qrLink && dbConfig.qrLink.trim()) ? dbConfig.qrLink.trim() : `TICKET:${fechaCopia}`;
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}`;
+            qrHtml = `<div style="text-align:center; margin-top:8px;"><img src="${qrUrl}" style="width:70px; height:70px; object-fit:contain;"></div>`;
+        }
+
+        tk.innerHTML = `
+            <div class="ticket-wrapper">
+                ${logoHtml}
+                ${empresaTitle}
+                <div class="ticket-subtitle">Tel: ${dbConfig.tel || 'N/A'}</div>
+                <div class="ticket-subtext">Medellín - Colombia</div>
+                
+                <div class="ticket-header">RECIBO DE PAGO (COPIA)</div>
+                
+                <div class="ticket-section">
+                    <div class="ticket-row"><span class="ticket-row-label">Fecha:</span> <span>${fechaCopia.split(' ')[0]}</span></div>
+                    <div class="ticket-row"><span class="ticket-row-label">Hora:</span> <span>${fechaCopia.split(' ')[1] || 'N/A'}</span></div>
+                </div>
+
+                <div class="ticket-divider-container">
+                    <div class="ticket-section-title">DATOS DEL CLIENTE</div>
+                    <div class="ticket-row-item">
+                        <div class="ticket-row"><span class="ticket-row-label">Nombre:</span> <span>${cli.nombre}</span></div>
+                        <div class="ticket-row"><span class="ticket-row-label">Cédula:</span> <span>${cli.cedula || 'N/A'}</span></div>
+                    </div>
+                </div>
+
+                <div class="ticket-divider-container">
+                    <div class="ticket-section-title">DETALLES DEL PRÉSTAMO</div>
+                    <div class="ticket-row-item">
+                        <div class="ticket-row">
+                            <span>Préstamo Original:</span><span>$${p.montoPrestado.toFixed(2)}</span>
+                        </div>
+                        <div class="ticket-row">
+                            <span>Interés (${((p.montoInteres/p.montoPrestado)*100).toFixed(0)}%):</span><span>$${p.montoInteres.toFixed(2)}</span>
+                        </div>
+                        <div class="ticket-row" style="font-weight:bold; border-top: 1px dotted black; padding-top: 3px; margin-top: 3px;">
+                            <span>Total Deuda:</span><span>$${(p.montoTotal + p.moraAplicadaHist).toFixed(2)}</span>
+                        </div>
+                        <div class="ticket-row">
+                            <span>Vencimiento:</span><span>${p.fechaVenc}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ticket-divider-container">
+                    <div class="ticket-amount">PAGO REGISTRADO</div>
+                    <div class="ticket-amount-value">$${monto.toFixed(2)}</div>
+                </div>
+
+                <div class="ticket-divider-container">
+                    <div class="ticket-section-title">ESTADO DE CUENTA</div>
+                    <div class="ticket-row-item">
+                        <div class="ticket-row">
+                            <span>Pagado Acumulado:</span><span>$${p.totalPagado.toFixed(2)}</span>
+                        </div>
+                        <div class="ticket-row ticket-highlight">
+                            <span>SALDO PENDIENTE:</span><span>$${p.saldoRestante.toFixed(2)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ticket-footer">
+                    <div class="ticket-signature">
+                        _______________________<br>
+                        Firma Conforme
+                    </div>
+                    <div class="ticket-footer-text">
+                        ${dbConfig.msj}<br>
+                        Copia del recibo anterior
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Imprimir en ventana dedicada para forzar tamaño térmico
+        const tkHtml = tk.innerHTML;
+        imprimirTicketEnIframe(tkHtml);
+    }
+
+    /* Ticket de prueba eliminado (funcionalidad ya retirada) */
+
+    /* Imprimir ticket en ventana nueva con @page 58mm para impresoras térmicas */
+    function imprimirTicketEnIframe(innerHtml) {
+        // Crear iframe oculto
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed'; iframe.style.right = '0'; iframe.style.top = '0'; iframe.style.width = '1px'; iframe.style.height = '1px'; iframe.style.border = '0'; iframe.style.visibility='hidden';
+        document.body.appendChild(iframe);
+        const doc = iframe.contentWindow.document;
+        const css = `
+            <style>
+                @page { size: var(--ticket-width-mm) auto; margin: 0; }
+                html,body { margin:0; padding:0; }
+                body { font-family: 'Courier New', monospace; color:#000; }
+                .ticket-wrapper { width: var(--ticket-width-mm); box-sizing: border-box; padding: var(--ticket-padding-mm); font-size: var(--ticket-font-size); }
+            </style>`;
+        doc.open();
+        doc.write(`<html><head><title>Ticket</title>${css}</head><body>${innerHtml}</body></html>`);
+        doc.close();
+        // Esperar a que cargue y luego imprimir (asegurando que solo se imprima una vez)
+        iframe.dataset._printed = '0';
+        iframe.onload = () => {
+            try {
+                if(iframe.dataset._printed === '0') {
+                    iframe.dataset._printed = '1';
+                    iframe.contentWindow.focus(); iframe.contentWindow.print();
+                }
+            } catch(e) { console.warn('print iframe error', e); }
+            setTimeout(() => { iframe.remove(); }, 800);
+        };
+        // Fallback: si onload no dispara en algunos navegadores, intentar tras 600ms
+        setTimeout(()=>{
+            try{
+                if(iframe.dataset._printed === '0') {
+                    iframe.dataset._printed = '1';
+                    iframe.contentWindow.focus(); iframe.contentWindow.print();
+                }
+            }catch(e){}
+            setTimeout(()=>iframe.remove(),1200);
+        }, 600);
+    }
+
+    function imprimirEstadisticas() {
+        // Genera el HTML del reporte y lo imprime en un iframe configurado para A4
+        const html = generarReporteHTML(dbPrestamos);
+        imprimirReporteEnIframe(html, 'A4');
+    }
+
+    function toggleFiltroReporte() {
+        const tipo = document.getElementById('repTipo').value;
+        const cont = document.getElementById('repControles');
+        if(tipo === 'dia') {
+            cont.innerHTML = '<label>Fecha</label><input id="repFecha" type="date" class="input" required>';
+        } else if(tipo === 'mes') {
+            cont.innerHTML = '<label>Mes</label><input id="repMes" type="month" class="input" required>';
+        } else if(tipo === 'anio') {
+            cont.innerHTML = '<label>Año</label><input id="repAnio" type="number" min="2000" max="2100" class="input" value="' + new Date().getFullYear() + '" required>';
+        } else {
+            cont.innerHTML = '<label>Desde</label><input id="repDesde" type="date" class="input" required><label class="mt-sm">Hasta</label><input id="repHasta" type="date" class="input" required>';
+        }
+    }
+
+    function generarReporteFiltrado(preview = true, imprimir = false) {
+        const tipo = document.getElementById('repTipo').value;
+        let desde = null, hasta = null;
+        try {
+            if(tipo === 'dia') {
+                const d = document.getElementById('repFecha').value; if(!d) return mostrarAlerta('Filtro','Seleccione una fecha','warning');
+                desde = new Date(d + 'T00:00:00'); hasta = new Date(d + 'T23:59:59');
+            } else if(tipo === 'mes') {
+                const m = document.getElementById('repMes').value; if(!m) return mostrarAlerta('Filtro','Seleccione mes','warning');
+                const [yy, mm] = m.split('-'); desde = new Date(yy, mm-1, 1); hasta = new Date(yy, mm, 0,23,59,59);
+            } else if(tipo === 'anio') {
+                const y = document.getElementById('repAnio').value; if(!y) return mostrarAlerta('Filtro','Ingrese año','warning');
+                desde = new Date(y,0,1); hasta = new Date(y,11,31,23,59,59);
+            } else {
+                const d1 = document.getElementById('repDesde').value; const d2 = document.getElementById('repHasta').value;
+                if(!d1 || !d2) return mostrarAlerta('Filtro','Seleccione rango completo','warning');
+                desde = new Date(d1+'T00:00:00'); hasta = new Date(d2+'T23:59:59');
+            }
+        } catch(e) { return mostrarAlerta('Error','No se pudo leer las fechas','danger'); }
+
+        // Filtrar por pagos en rango
+        const prestamosFiltrados = dbPrestamos.map(p => {
+            const pagos = (p.pagos || []).filter(pg => {
+                const dt = new Date(pg.fecha);
+                if(isNaN(dt)) {
+                    // intentar parseo alterno
+                    return false;
+                }
+                return dt >= desde && dt <= hasta;
+            });
+            return Object.assign({}, p, { pagosFiltrados: pagos });
+        }).filter(p => (p.pagosFiltrados && p.pagosFiltrados.length > 0));
+
+        const html = generarReporteHTML(prestamosFiltrados, desde, hasta);
+        const rep = document.getElementById('reporte-impresion');
+        rep.innerHTML = html;
+        if(preview && !imprimir) {
+            // Mostrar la vista previa inline dentro del modal (sin abrir otro modal)
+            rep.style.display = 'block';
+            // Asegurar que el modal esté abierto y desplazarse al área de preview
+            const modal = document.getElementById('modalReporte');
+            if(!modal.classList.contains('active')) modal.classList.add('active');
+            setTimeout(()=>{
+                const previewEl = document.getElementById('reporte-impresion');
+                previewEl.scrollIntoView({behavior:'smooth', block:'center'});
+            }, 120);
+            return;
+        }
+        if(imprimir) {
+            imprimirReporteEnIframe(html, 'A4');
+        }
+    }
+
+    function generarReporteHTML(prestamosList, desde=null, hasta=null) {
+        let encabezadoFechas = '';
+        if(desde && hasta) encabezadoFechas = `<p style="text-align:center; font-size:12px; color:#666;">Período: ${desde.toLocaleDateString()} - ${hasta.toLocaleDateString()}</p>`;
+        let html = `
+            <div style="padding:10px; font-family: Arial, Helvetica, sans-serif; color:#000;">
+            <h2 style="text-align:center; margin-bottom:5px;">Reporte de Cartera</h2>
+            <h3 style="text-align:center; margin-top:0; color:#555; font-size:16px;">${dbConfig.nombre}</h3>
+            <p style="text-align:center; font-size:12px; color:#666;">Generado: ${new Date().toLocaleString()}</p>
+            ${encabezadoFechas}
+            <hr style="border:none; border-top:2px solid #333; margin:10px 0;">
+            <table style="width:100%; border-collapse:collapse; margin-top:10px; text-align:left;" border="1" cellpadding="6">
+                <thead><tr style="background:#333; color:white; font-weight:bold;"><th>Cliente</th><th>Préstamo</th><th>Fecha Pago</th><th>Monto</th><th>Detalle</th></tr></thead>
+                <tbody>`;
+
+        let total = 0;
+        prestamosList.forEach(p => {
+            const cli = dbClientes.find(c => c.id === p.clienteId) || { nombre: 'N/A' };
+            const pagos = (p.pagosFiltrados && p.pagosFiltrados.length) ? p.pagosFiltrados : (p.pagos || []);
+            pagos.forEach(pg => {
+                const fecha = new Date(pg.fecha);
+                html += `<tr><td>${cli.nombre}</td><td>$${p.montoPrestado.toFixed(2)} (${p.cantPlazo} ${p.tipoPlazo})</td><td>${isNaN(fecha)? pg.fecha : fecha.toLocaleString()}</td><td>$${pg.monto.toFixed(2)}</td><td>${pg.concepto || ''}</td></tr>`;
+                total += Number(pg.monto || 0);
+            });
+        });
+
+        html += `</tbody>
+                <tfoot>
+                    <tr style="background:#f0f0f0; font-weight:bold;"><td colspan="3" style="text-align:right;">Total:</td><td colspan="2">$${total.toFixed(2)}</td></tr>
+                </tfoot>
+            </table>
+            <hr style="border:none; border-top:1px dashed #999; margin:10px 0;">
+            <p style="text-align:center; font-size:11px; color:#999;">Documento generado automáticamente por el Sistema de Préstamos</p>
+            </div>`;
+        return html;
+    }
+
+    function imprimirReporteEnIframe(innerHtml, paper='A4') {
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed'; iframe.style.right = '0'; iframe.style.top = '0'; iframe.style.width = '1px'; iframe.style.height = '1px'; iframe.style.border = '0'; iframe.style.visibility='hidden';
+        document.body.appendChild(iframe);
+        const doc = iframe.contentWindow.document;
+        const css = `
+            <style>
+                @page { size: ${paper}; margin: 10mm; }
+                html,body { margin:0; padding:0; }
+                body { font-family: Arial, Helvetica, sans-serif; color:#000; padding: 8mm; }
+                table { width:100%; border-collapse:collapse; }
+                th, td { border:1px solid #ddd; padding:6px; }
+            </style>`;
+        doc.open();
+        doc.write(`<html><head><title>Reporte</title>${css}</head><body>${innerHtml}</body></html>`);
+        doc.close();
+        // Evitar doble llamado a print usando bandera en el iframe
+        iframe.dataset._printed = '0';
+        iframe.onload = () => {
+            try {
+                if(iframe.dataset._printed === '0') {
+                    iframe.dataset._printed = '1';
+                    iframe.contentWindow.focus(); iframe.contentWindow.print();
+                }
+            } catch(e) { console.warn('print iframe error', e); }
+            setTimeout(()=>iframe.remove(),800);
+        };
+        // Fallback
+        setTimeout(()=>{ try{ if(iframe.dataset._printed === '0') { iframe.dataset._printed = '1'; iframe.contentWindow.focus(); iframe.contentWindow.print(); } }catch(e){} setTimeout(()=>iframe.remove(),1200); }, 600);
+    }
+
+    async function descargarReportePDF() {
+        const rep = document.getElementById('reporte-impresion');
+        if(!rep.innerHTML.trim()) return mostrarAlerta('Reporte','Genere la vista previa primero','warning');
+        try {
+            const blob = await generarPDFDesdeElemento(rep);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = `reporte_${new Date().toISOString().slice(0,10)}.pdf`; document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
+            mostrarAlerta('PDF','Reporte descargado correctamente','success');
+        } catch(e) { console.error(e); mostrarAlerta('Error','No se pudo generar PDF','danger'); }
+    }
+
+    function generarPDFDesdeElemento(el) {
+        // intenta primero con escala 2; si falla (memoria, etc) reintenta con escala 1
+        return new Promise((resolve, reject) => {
+            const doCanvas = (scale) => {
+                html2canvas(el, { scale }).then(canvas => {
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdf = new jsPDF('p', 'mm', 'a4');
+                    const imgProps = pdf.getImageProperties(imgData);
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                    const blob = pdf.output('blob');
+                    resolve(blob);
+                }).catch(err => {
+                    if(scale > 1) {
+                        console.warn('Scale 2 failed, retrying with scale 1', err);
+                        doCanvas(1);
+                    } else {
+                        reject(err);
+                    }
+                });
+            };
+            doCanvas(2);
+        });
+    }
+
+    async function enviarReporteWhatsApp() {
+        const rep = document.getElementById('reporte-impresion');
+        if(!rep.innerHTML.trim()) return mostrarAlerta('WhatsApp','Genere la vista previa primero','warning');
+        try {
+            const blob = await generarPDFDesdeElemento(rep);
+            // Crear enlace de descarga para que el usuario pueda bajar y adjuntar manualmente en WhatsApp Web/Móvil
+            const url = URL.createObjectURL(blob);
+            // Abrir el PDF en nueva pestaña para que el usuario lo descargue/comparta
+            window.open(url, '_blank');
+            // Abrir WhatsApp Web con mensaje predefinido
+            const texto = encodeURIComponent(`${dbConfig.nombre} - Reporte generado. Descargue el PDF desde la nueva pestaña y adjúntelo en la conversación.`);
+            window.open(`https://wa.me/?text=${texto}`, '_blank');
+            mostrarAlerta('WhatsApp','PDF generado y abierto en nueva pestaña. Abra WhatsApp para compartirlo.','info');
+        } catch(e) { console.error(e); 
+            const msg = e && e.message ? e.message : String(e);
+            mostrarAlerta('Error',`No se pudo generar el PDF para WhatsApp${msg?': '+msg:''}`,'danger'); }
+    }
+
+    /* ================= CONFIG Y BACKUP ================= */
+    function guardarConfig() {
+        dbConfig.nombre = document.getElementById('cfgNombre').value;
+        dbConfig.tel = document.getElementById('cfgTel').value;
+        dbConfig.nit = document.getElementById('cfgNit').value.trim();
+        dbConfig.direccion = document.getElementById('cfgDireccion').value.trim();
+        dbConfig.msj = document.getElementById('cfgMsj').value;
+        dbConfig.qrEnabled = document.getElementById('cfgQrEnable').checked;
+        dbConfig.qrLink = document.getElementById('cfgQrLink').value.trim();
+        // logo (ya guardada por previsualizarLogo en dbConfig.logo)
+        if(!dbConfig.logo) dbConfig.logo = dbConfig.logo || null;
+        localStorage.setItem('dbConfigV5', JSON.stringify(dbConfig));
+        document.getElementById('ui-nombre-empresa').innerText = dbConfig.nombre;
+        cerrarModal('modalConfig');
+    }
+
+    /* ================= AUTENTICACIÓN DE PRESTAMISTAS ================= */
+    let dbPrestamistas = JSON.parse(localStorage.getItem('dbPrestamistasV1')) || [];
+    
+    // Auto-crear admin si no hay usuarios
+    if(dbPrestamistas.length === 0) {
+        const adminPermisos = { modalClientes: true, modalCrearPrestamo: true, modalConfig: true, modalReporte: true };
+        dbPrestamistas.push({ id: 1, user: 'admin', pass: btoa('admin123'), permisos: adminPermisos });
+        localStorage.setItem('dbPrestamistasV1', JSON.stringify(dbPrestamistas));
+    }
+    
+    function guardarPrestamistas() { localStorage.setItem('dbPrestamistasV1', JSON.stringify(dbPrestamistas)); renderizarPrestamistas(); }
+
+    function usuarioActualEsAdmin() {
+        const cur = JSON.parse(localStorage.getItem('currentUserV1') || 'null');
+        if(!cur) return false;
+        const user = dbPrestamistas.find(x => x.id === cur.id);
+        if(!user) return false;
+        return !!(user.protegido || user.auto || String(user.user || '').toLowerCase() === 'admin');
+    }
+
+    function actualizarControlesPorRol() {
+        const esAdmin = usuarioActualEsAdmin();
+        document.querySelectorAll('[data-admin-only="true"]').forEach(el => {
+            el.classList.toggle('admin-only', !esAdmin);
+        });
+    }
+
+    function togglePwd(fieldId, btn) {
+        const inp = document.getElementById(fieldId);
+        if(!inp) return;
+        if(inp.type === 'password') { inp.type = 'text'; btn.innerText = '🙈'; }
+        else { inp.type = 'password'; btn.innerText = '👁️'; }
+    }
+
+    /* ================= ALERTAS MODERNAS ================= */
+    function mostrarAlerta(titulo, mensaje, tipo = 'info', botones = null) {
+        const modal = document.getElementById('alertModal');
+        const box = document.getElementById('alertBox');
+        const icon = document.getElementById('alertIcon');
+        const titleEl = document.getElementById('alertTitle');
+        const messageEl = document.getElementById('alertMessage');
+        const buttonsEl = document.getElementById('alertButtons');
+        
+        // Iconos y clases por tipo
+        const config = {
+            success: { icono: '✅', clase: 'alert-success' },
+            error: { icono: '❌', clase: 'alert-error' },
+            warning: { icono: '⚠️', clase: 'alert-warning' },
+            info: { icono: 'ℹ️', clase: 'alert-info' }
+        };
+        
+        const cfg = config[tipo] || config.info;
+        box.className = `alert-box ${cfg.clase}`;
+        icon.innerText = cfg.icono;
+        titleEl.innerText = titulo;
+        messageEl.innerText = mensaje;
+        
+        // Botones por defecto
+        if(!botones) botones = [{ text: 'Aceptar', action: () => cerrarAlerta(), primary: true }];
+        
+        buttonsEl.innerHTML = '';
+        botones.forEach(btn => {
+            const button = document.createElement('button');
+            button.className = btn.primary ? 'alert-btn btn btn-primary' : 'alert-btn btn btn-outline';
+            button.innerText = btn.text;
+            button.onclick = btn.action;
+            buttonsEl.appendChild(button);
+        });
+        
+        modal.classList.add('active');
+    }
+    
+    function cerrarAlerta() {
+        document.getElementById('alertModal').classList.remove('active');
+    }
+
+    function previsualizarLogo(event) {
+        const file = event.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const data = e.target.result;
+            dbConfig.logo = data;
+            document.getElementById('cfgLogoPreview').innerHTML = `<img src="${data}" style="width:100%; height:100%; object-fit:cover">`;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function crearPrestamista() {
+        const u = document.getElementById('newUserName').value.trim();
+        const p = document.getElementById('newUserPass').value;
+        if(!u || !p) {
+            mostrarAlerta('Campos Requeridos', 'Usuario y contraseña son obligatorios', 'error');
+            return;
+        }
+        if(dbPrestamistas.some(x=>x.user===u)) {
+            mostrarAlerta('Usuario Existe', 'Este usuario ya está registrado', 'error');
+            return;
+        }
+        // Permisos por defecto: todos activados para nuevos usuarios
+        const permisosDefault = { modalClientes: true, modalCrearPrestamo: true, modalConfig: true, modalReporte: true };
+        dbPrestamistas.push({ id: Date.now(), user: u, pass: btoa(p), permisos: permisosDefault });
+        guardarPrestamistas();
+        document.getElementById('newUserName').value=''; 
+        document.getElementById('newUserPass').value='';
+        renderizarPrestamistas();
+        mostrarAlerta('✓ Usuario Creado', `${u} fue creado exitosamente`, 'success');
+    }
+
+    function renderizarPrestamistas() {
+        const el = document.getElementById('listaPrestamistas');
+        el.innerHTML = '';
+        if(dbPrestamistas.length===0) { el.innerHTML = '<small style="color:var(--gray)">No hay usuarios</small>'; return; }
+        const cur = JSON.parse(localStorage.getItem('currentUserV1'));
+        dbPrestamistas.forEach(u=>{
+            const div = document.createElement('div');
+            div.className = 'prestamista-row flex-between';
+            const badge = u.protegido ? ' 🔒 PROTEGIDO' : '';
+            const canEdit = !u.protegido || (cur && cur.id === u.id);
+            const editBtn = canEdit ? `<button class="btn btn-outline btn-sm" onclick="abrirEditarPermisos(${u.id})">✏️ Editar</button>` : '<span style="color:var(--gray);font-size:12px">🔒 No editable</span>';
+            div.innerHTML = `
+                <strong>${u.user}${badge}</strong>
+                ${editBtn}
+            `;
+            el.appendChild(div);
+        });
+    }
+
+    function abrirEditarPermisos(userId) {
+        const user = dbPrestamistas.find(x => x.id === userId);
+        if(!user) return;
+        
+        // Verificar si es usuario protegido
+        if(user.protegido) {
+            const cur = JSON.parse(localStorage.getItem('currentUserV1'));
+            if(!cur || cur.id !== userId) {
+                mostrarAlerta('Acceso Restringido', 'No puedes editar este usuario. Solo el administrador puede modificar su propia cuenta.', 'warning');
+                return;
+            }
+        }
+        
+        document.getElementById('editPermNombre').innerText = user.user;
+        document.getElementById('editPermUserId').value = userId;
+        document.getElementById('editPermUser').value = user.user;
+        document.getElementById('editPermPass').value = '';
+        // Cargar permisos actuales
+        const permisos = user.permisos || {};
+        document.getElementById('perm_modalClientes').checked = permisos.modalClientes !== false;
+        document.getElementById('perm_modalCrearPrestamo').checked = permisos.modalCrearPrestamo !== false;
+        document.getElementById('perm_modalConfig').checked = permisos.modalConfig !== false;
+        document.getElementById('perm_modalReporte').checked = permisos.modalReporte !== false;
+        abrirModal('modalEditarPermisos');
+    }
+
+    function guardarPermisosPrestamista() {
+        const userId = parseInt(document.getElementById('editPermUserId').value);
+        const nuevoUser = document.getElementById('editPermUser').value.trim();
+        const nuevoPass = document.getElementById('editPermPass').value;
+        const user = dbPrestamistas.find(x => x.id === userId);
+        if(!user) return;
+        
+        // Impedir editar usuario protegido
+        if(user.protegido) {
+            const cur = JSON.parse(localStorage.getItem('currentUserV1'));
+            if(!cur || cur.id !== userId) {
+                mostrarAlerta('Error', 'No puedes editar la cuenta de usuario protegido.', 'error');
+                return;
+            }
+        }
+        
+        // Validar cambio de usuario
+        if(nuevoUser !== user.user && dbPrestamistas.some(x => x.user === nuevoUser && x.id !== userId)) {
+            mostrarAlerta('Error', 'Este usuario ya existe', 'error');
+            return;
+        }
+        user.user = nuevoUser;
+        if(nuevoPass) user.pass = btoa(nuevoPass);
+        user.permisos = {
+            modalClientes: document.getElementById('perm_modalClientes').checked,
+            modalCrearPrestamo: document.getElementById('perm_modalCrearPrestamo').checked,
+            modalConfig: document.getElementById('perm_modalConfig').checked,
+            modalReporte: document.getElementById('perm_modalReporte').checked
+        };
+        guardarPrestamistas();
+        cerrarModal('modalEditarPermisos');
+        renderizarPrestamistas();
+        mostrarAlerta('✓ Usuario Actualizado', `Los datos de ${nuevoUser} fueron guardados`, 'success');
+    }
+
+    function borrarPrestamista(id) {
+        const user = dbPrestamistas.find(x => x.id === parseInt(id));
+        if(!user) return;
+        
+        // Proteger usuario especial
+        if(user.protegido) {
+            mostrarAlerta('Operación No Permitida', 'No se puede eliminar la cuenta de administrador protegido.', 'error');
+            return;
+        }
+        
+        mostrarAlerta('Confirmar Eliminación', `¿Borrar usuario "${user.user}" permanentemente?`, 'warning', [
+            { text: 'Cancelar', action: cerrarAlerta },
+            { text: 'Borrar', action: () => {
+                dbPrestamistas = dbPrestamistas.filter(x => x.id !== parseInt(id));
+                guardarPrestamistas();
+                cerrarAlerta();
+                cerrarModal('modalEditarPermisos');
+                renderizarPrestamistas();
+                mostrarAlerta('✓ Usuario Eliminado', `${user.user} fue borrado`, 'success');
+            }, primary: true }
+        ]);
+    }
+
+    function login() {
+        const u = document.getElementById('loginUser').value.trim();
+        const p = document.getElementById('loginPass').value;
+        const found = dbPrestamistas.find(x=>x.user===u && x.pass===btoa(p));
+        if(!found) {
+            mostrarAlerta('Acceso Denegado', 'Usuario o contraseña incorrectos', 'error');
+            return;
+        }
+        
+        // Migración: Agregar permisos a usuarios antiguos que no los tengan
+        if(!found.permisos) {
+            found.permisos = { modalClientes: true, modalCrearPrestamo: true, modalConfig: true, modalReporte: true };
+            guardarPrestamistas();
+        }
+        
+        localStorage.setItem('currentUserV1', JSON.stringify({ id: found.id, user: found.user }));
+        document.getElementById('btn-auth').innerText = '🔓 ' + found.user;
+        actualizarControlesPorRol();
+        cerrarModal('modalLogin');
+        // limpiar campos para que no persistan
+        document.getElementById('loginUser').value = '';
+        document.getElementById('loginPass').value = '';
+        mostrarAlerta('✓ Sesión Iniciada', `Bienvenido, ${found.user}`, 'success');
+    }
+
+    function togglePasswordLogin() {
+        const input = document.getElementById('loginPass');
+        input.type = input.type === 'password' ? 'text' : 'password';
+    }
+
+    function logout() {
+        localStorage.removeItem('currentUserV1');
+        document.getElementById('btn-auth').innerText = '🔐 Login';
+        // limpiar campos de login por seguridad
+        document.getElementById('loginUser').value = '';
+        document.getElementById('loginPass').value = '';
+        actualizarControlesPorRol();
+    }
+
+    function comprobarSesion() {
+        const cur = JSON.parse(localStorage.getItem('currentUserV1'));
+        if(cur) document.getElementById('btn-auth').innerText = '🔓 ' + cur.user;
+        else document.getElementById('btn-auth').innerText = '🔐 Login';
+        actualizarControlesPorRol();
+    }
+
+    // Inicializar listado de prestamistas
+    // Crear usuario admin inicial si no hay ninguno (usuario: admin, contraseña: admin123)
+    if(dbPrestamistas.length === 0) {
+        dbPrestamistas.push({ id: Date.now(), user: 'admin', pass: btoa('admin123'), auto: true, protegido: true });
+        guardarPrestamistas();
+        console.log('Usuario inicial admin creado (admin / admin123) - USUARIO PROTEGIDO');
+    }
+    renderizarPrestamistas(); comprobarSesion();
+
+    function toggleAuth() {
+        const cur = JSON.parse(localStorage.getItem('currentUserV1'));
+        if(cur) {
+            // cerramos sesión inmediatamente y mostramos notificación ligera
+            logout();
+            // si prefieres un mensaje más estilizado puedes usar mostrarAlerta en lugar de alert
+            // mostrarAlerta('Sesión cerrada', '', 'info');
+        } else {
+            abrirModal('modalLogin');
+        }
+    }
+
+    function descargarBackup() {
+        const backupData = { 
+            clientes: dbClientes, 
+            prestamos: dbPrestamos, 
+            config: dbConfig,
+            fecha_backup: new Date().toLocaleString(),
+            version: "v5"
+        };
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+        const a = document.createElement('a');
+        a.href = dataStr;
+        a.download = "Backup_" + dbConfig.nombre.replace(/\s+/g, '_') + "_" + new Date().toISOString().split('T')[0] + ".json";
+        document.body.appendChild(a); 
+        a.click(); 
+        a.remove();
+    }
+
+    async function descargarBackupIndexedDB() {
+        try {
+            if(!usuarioActualEsAdmin()) {
+                mostrarAlerta('Acceso Restringido', 'Solo el administrador puede exportar la base local IndexedDB.', 'warning');
+                return;
+            }
+            if(!window.indexedDB) {
+                mostrarAlerta('IndexedDB no disponible', 'Tu navegador no soporta esta función de respaldo.', 'warning');
+                return;
+            }
+
+            const payload = {
+                tipo: 'indexeddb-backup',
+                version: 1,
+                fecha_backup: new Date().toISOString(),
+                data: {}
+            };
+
+            for (const key of DB_PERSIST_KEYS) {
+                let val = await idbGet(key);
+                if(val == null) val = localStorage.getItem(key);
+                if(val == null && DB_DEFAULTS[key] !== undefined) val = JSON.stringify(DB_DEFAULTS[key]);
+                payload.data[key] = val;
+            }
+
+            // extras útiles del usuario
+            payload.data.temaOscuroV5 = localStorage.getItem('temaOscuroV5') || 'false';
+
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `indexeddb_backup_${new Date().toISOString().slice(0,10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            mostrarAlerta('Backup IndexedDB', 'Exportación completada correctamente.', 'success');
+        } catch (error) {
+            console.error(error);
+            mostrarAlerta('Error', 'No se pudo exportar la base local.', 'error');
+        }
+    }
+
+    async function restaurarBackupIndexedDB(event) {
+        if(!usuarioActualEsAdmin()) {
+            mostrarAlerta('Acceso Restringido', 'Solo el administrador puede importar una base local IndexedDB.', 'warning');
+            event.target.value = '';
+            return;
+        }
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                if (!data || data.tipo !== 'indexeddb-backup' || !data.data) {
+                    mostrarAlerta('Archivo inválido', 'El JSON no corresponde a un respaldo de IndexedDB válido.', 'error');
+                    return;
+                }
+
+                mostrarAlerta('Restaurar Base Local', 'Esto reemplazará los datos locales actuales. ¿Deseas continuar?', 'warning', [
+                    { text: 'Cancelar', action: cerrarAlerta },
+                    {
+                        text: 'Sí, restaurar',
+                        primary: true,
+                        action: async () => {
+                            try {
+                                for (const key of DB_PERSIST_KEYS) {
+                                    const val = data.data[key];
+                                    if(typeof val === 'string') {
+                                        localStorage.setItem(key, val);
+                                        await idbSet(key, val);
+                                    }
+                                }
+
+                                if(typeof data.data.temaOscuroV5 === 'string') {
+                                    localStorage.setItem('temaOscuroV5', data.data.temaOscuroV5);
+                                }
+
+                                cerrarAlerta();
+                                mostrarAlerta('Restauración completada', 'La aplicación se recargará para aplicar los cambios.', 'success', [
+                                    { text: 'Aceptar', primary: true, action: () => location.reload() }
+                                ]);
+                            } catch (errRestore) {
+                                console.error(errRestore);
+                                cerrarAlerta();
+                                mostrarAlerta('Error', 'No se pudo restaurar la base local.', 'error');
+                            }
+                        }
+                    }
+                ]);
+            } catch (error) {
+                console.error(error);
+                mostrarAlerta('Error', 'No se pudo leer el archivo de respaldo.', 'error');
+            }
+        };
+        reader.readAsText(file);
+        event.target.value = '';
+    }
+
+    function restaurarBackup(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const c = JSON.parse(e.target.result);
+                
+                // Validar estructura del backup
+                if (!c.clientes || !Array.isArray(c.clientes)) {
+                    alert("❌ Error: El archivo no contiene un arrray válido de clientes.");
+                    return;
+                }
+                if (!c.prestamos || !Array.isArray(c.prestamos)) {
+                    alert("❌ Error: El archivo no contiene un arrray válido de préstamos.");
+                    return;
+                }
+                
+                mostrarAlerta('⚠️ ATENCIÓN', `📋 Clientes a restaurar: ${c.clientes.length}\n💰 Préstamos a restaurar: ${c.prestamos.length}\n\nEsto borrará los datos actuales. ¿Continuar?`, 'warning', [
+                    { text: 'Cancelar' },
+                    { text: 'Sí, restaurar', action: () => {
+                        // Guardar en localStorage
+                        localStorage.setItem('dbClientesV5', JSON.stringify(c.clientes));
+                        localStorage.setItem('dbPrestamosV5', JSON.stringify(c.prestamos));
+                        if(c.config && typeof c.config === 'object') {
+                            localStorage.setItem('dbConfigV5', JSON.stringify(c.config));
+                        }
+                        alert("✅ Backup restaurado exitosamente.\n\nLa página se reiniciará para aplicar los cambios.");
+                        location.reload();
+                    }}
+                ]);
+
+            } catch (error) { 
+                alert("❌ Error al leer el archivo: " + error.message + "\n\nVerifica que sea un archivo de backup válido.");
+            }
+        };
+        reader.readAsText(file);
+        event.target.value = ''; 
+    }
+
+    /* ================= CONTROL DE MODALES ================= */
+    function abrirModal(id) {
+        const protegidos = ['modalClientes','modalCrearPrestamo','modalConfig','modalPrestamistas','modalReporte'];
+        if(protegidos.includes(id)) {
+            const cur = JSON.parse(localStorage.getItem('currentUserV1'));
+            if(!cur) { abrirModal('modalLogin'); return; }
+            // Verificar permisos
+            const user = dbPrestamistas.find(x => x.id === cur.id);
+            if(user && user.permisos && user.permisos[id] === false) {
+                pedirAutorizacionAdmin(id);
+                return;
+            }
+        }
+        if(id === 'modalLogin') {
+            // limpiar campos al mostrar el login
+            document.getElementById('loginUser').value = '';
+            document.getElementById('loginPass').value = '';
+        }
+        if(id === 'modalClientes') renderizarClientes();
+        if(id === 'modalPrestamistas') renderizarPrestamistas();
+        if(id === 'modalReporte') toggleFiltroReporte();
+        document.getElementById(id).classList.add('active');
+    }
+
+    function pedirAutorizacionAdmin(modalId) {
+        mostrarAlerta('Acceso Restringido', `No tienes permiso para acceder a este módulo.\n\nPide autorización al administrador.`, 'warning', [
+            { text: 'Aceptar', action: cerrarAlerta }
+        ]);
+    }
+    function cerrarModal(id) {
+        const el = document.getElementById(id);
+        if(!el) return;
+        el.classList.remove('active');
+    }
+
+    // Click fuera del modal para cerrarlo en móviles fácilmente
+    window.onclick = function(event) {
+        if (event.target.classList.contains('modal-overlay')) {
+            event.target.classList.remove('active');
+        }
+        // Cerrar dropdown de búsqueda de clientes si se hace clic fuera
+        const dropdown = document.getElementById('dropdownClientes');
+        const searchInput = document.getElementById('buscarClientePrestamo');
+        if(dropdown && searchInput) {
+            const clickDentroBuscador = event.target === searchInput || event.target === dropdown || event.target.closest('#dropdownClientes');
+            if(!clickDentroBuscador) dropdown.classList.remove('active');
+        }
+    }
+
+    // añadir botón de cerrar automático a cada modal (coloca al principio del contenido)
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.modal-overlay .modal-content').forEach(cont => {
+            if (!cont.querySelector('.modal-close')) {
+                const btn = document.createElement('button');
+                btn.className = 'modal-close';
+                btn.innerHTML = '&times;';
+                btn.onclick = () => cont.closest('.modal-overlay').classList.remove('active');
+                cont.prepend(btn);
+            }
+        });
+    });
+
+    inicializarPersistenciaSinHost();
+</script>
+</body>
+</html>
